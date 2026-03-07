@@ -1,10 +1,12 @@
 import express from "express"
-import { createAppointment, deleteAppointment, getAppointmentById, getAppointmentDate, updateAppointment } from "../controllers/appointmentController.js"
+import { createAppointment, deleteAppointment, getAppointmentById, getAppointmentDate, updateAppointment, getCalendarAppointments } from "../controllers/appointmentController.js"
 import authMiddleware from "../middleware/authMiddleware.js"
 
  const router = express.Router()
 
  router.route("/").post(authMiddleware,createAppointment).get(authMiddleware,getAppointmentDate)
+
+ router.route("/calendar").get(authMiddleware, getCalendarAppointments)
 
  router.route("/:id").get(authMiddleware, getAppointmentById)
  .patch(authMiddleware, updateAppointment).delete(authMiddleware, deleteAppointment)

@@ -176,8 +176,43 @@ const deleteAppointment =async(req, res)=>{
     }
 }
 
+const getCalendarAppointments = async (req, res) => {
+    const { start, end } = req.query
+    const user = req.user
+
+    if (!start || !end) {
+        return res.status(400).json({ msg: "Se requieren los parámetros start y end" })
+    }
+
+    try {
+        const query = {
+            date: { $gte: new Date(start), $lte: new Date(end) }
+        }
+
+        if (user.admin) {
+            // Admin total: ve todas las citas sin filtro
+        } else if (user.branchManager) {
+            // Gestor de sucursal: solo ve las citas de su centro
+            if (user.health) query.health = user.health
+        } else {
+            // Usuario regular: solo sus propias citas
+            query.user = user._id
+        }
+
+        const appointments = await Appointment.find(query)
+            .populate('services', 'name category')
+            .populate('user', 'name')
+            .populate('health', 'name')
+
+        res.json(appointments)
+    } catch (error) {
+        console.log(error)
+        res.status(500).json({ msg: "Error al obtener las citas del calendario" })
+    }
+}
+
 //exportar
 
 export {
-    createAppointment,getAppointmentDate,getAppointmentById,updateAppointment,deleteAppointment
+    createAppointment, getAppointmentDate, getAppointmentById, updateAppointment, deleteAppointment, getCalendarAppointments
 }
