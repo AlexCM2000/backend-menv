@@ -16,8 +16,8 @@ import {
 
 const router = express.Router();
 
-// Listar todos los historiales
-router.get("/", getHealthRecords);
+// Listar todos los historiales (auth para filtros por rol)
+router.get("/", authMiddleware, getHealthRecords);
 
 // Crear un historial médico vacío para un paciente (requiere auth)
 router.post("/", authMiddleware, createHealthRecord);

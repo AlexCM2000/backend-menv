@@ -56,6 +56,22 @@ const getUsers = async (req, res) => {
       ];
     }
 
+    // Filtros por rol y verificación (solo admin y branchManager)
+    if (req.user.admin || req.user.branchManager) {
+      const { role, verified } = req.query;
+      if (role === "admin") {
+        query.admin = true;
+      } else if (role === "branchManager") {
+        query.branchManager = true;
+        query.admin = { $ne: true };
+      } else if (role === "user") {
+        query.admin = { $ne: true };
+        query.branchManager = { $ne: true };
+      }
+      if (verified === "true") query.verified = true;
+      else if (verified === "false") query.verified = false;
+    }
+
     const paginatedUsers = await paginate(
       User,
       page,

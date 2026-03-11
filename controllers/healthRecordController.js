@@ -1,9 +1,13 @@
 import HealthRecord from "../models/HealthRecord.js";
 import Patient from "../models/Patient.js";
+import Health from "../models/HealthCenter.js";
 import Appointment from "../models/Appointment.js";
 import mongoose from "mongoose";
 import paginate from "../utils/pagination.js";
 import dayjs from "dayjs";
+
+const isMongoObjectId = (value) =>
+  typeof value === "string" && /^[a-fA-F0-9]{24}$/.test(value);
 
 /**
  * Listado paginado de historiales médicos
@@ -12,7 +16,58 @@ export const getHealthRecords = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.page_size) || 10;
+    const search = req.query.search;
+    const state = req.query.state;
+
     const filter = { archivedAt: null };
+
+    // Filtro por estado del historial
+    if (state && ["activo", "cerrado", "en tratamiento"].includes(state)) {
+      filter.state = state;
+    }
+
+    // Filtro por centro de salud y/o búsqueda (a través del paciente)
+    let patientFilter = { eliminado_en: null };
+    let needsPatientLookup = false;
+
+    if (req.user) {
+      if (req.user.admin) {
+        if (req.query.health) {
+          const hcQuery = isMongoObjectId(req.query.health)
+            ? { _id: req.query.health }
+            : { codigo: req.query.health };
+          const hc = await Health.findOne(hcQuery);
+          if (!hc)
+            return res
+              .status(404)
+              .json({ message: "Centro de salud no encontrado." });
+          patientFilter.healthCenter = hc._id;
+          needsPatientLookup = true;
+        }
+      } else if (req.user.branchManager) {
+        patientFilter.healthCenter = req.user.health;
+        needsPatientLookup = true;
+      }
+    }
+
+    // Búsqueda por nombre o código SUS del paciente
+    if (search) {
+      patientFilter.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { susCode: { $regex: search, $options: "i" } },
+      ];
+      needsPatientLookup = true;
+    }
+
+    if (needsPatientLookup) {
+      const matchingPatients = await Patient.find(patientFilter).select("_id");
+      const patientIds = matchingPatients.map((p) => p._id);
+      if (patientIds.length === 0) {
+        return res.json({ count: 0, page, page_size: pageSize, results: [] });
+      }
+      filter.patient = { $in: patientIds };
+    }
 
     const paginated = await paginate(HealthRecord, page, pageSize, filter, [
       { path: "patient", select: "firstName lastName susCode" },

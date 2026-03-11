@@ -83,6 +83,27 @@ const getUserAppointments = async (req, res) => {
 
        
 
+        // Filtro por estado de la cita
+        const stateFilter = req.query.state;
+        const validStates = ['Pendiente', 'Reprogramada', 'Cancelada', 'Completada', 'No asistio'];
+        if (stateFilter && validStates.includes(stateFilter)) {
+            query.state = stateFilter;
+        }
+
+        // Filtro por rango de fecha (solo admin y branchManager)
+        if (req.user.admin || req.user.branchManager) {
+            const { date_from, date_to } = req.query;
+            if (date_from || date_to) {
+                query.date = {};
+                if (date_from) query.date.$gte = new Date(date_from);
+                if (date_to) {
+                    const end = new Date(date_to);
+                    end.setHours(23, 59, 59, 999);
+                    query.date.$lte = end;
+                }
+            }
+        }
+
         // Realizar la consulta de citas médicas y usar populate para incluir los detalles del usuario
         const paginatedAppointments = await Appointment.find(query)
             .populate('services') // Poblamos los servicios relacionados

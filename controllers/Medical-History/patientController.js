@@ -8,16 +8,58 @@ import paginate from "../../utils/pagination.js";
 import mongoose from "mongoose";
 import { populate } from "dotenv";
 
+const isMongoObjectId = (value) =>
+  typeof value === "string" && /^[a-fA-F0-9]{24}$/.test(value);
+
 const getPatients = async (req, res) => {
   try {
-    // Obtener parámetros de paginación desde la consulta (query params)
     const page = parseInt(req.query.page) || 1;
     const pageSize = parseInt(req.query.page_size) || 10;
+    const search = req.query.search;
+    const gender = req.query.gender;
 
-    // Filtrar solo los pacientes que no han sido soft deleted (eliminado_en: null)
+    if (!req.user) {
+      return res.status(403).json({ message: "No autorizado" });
+    }
+
     const query = { eliminado_en: null };
 
-    // Llamar a la función utilitaria para paginar
+    // Filtro por centro de salud según rol
+    if (req.user.admin) {
+      if (req.query.health) {
+        const hcQuery = isMongoObjectId(req.query.health)
+          ? { _id: req.query.health }
+          : { codigo: req.query.health };
+        const hc = await Health.findOne(hcQuery);
+        if (!hc)
+          return res
+            .status(404)
+            .json({ message: "Centro de salud no encontrado." });
+        query.healthCenter = hc._id;
+      }
+    } else if (req.user.branchManager) {
+      if (!req.user.health)
+        return res
+          .status(400)
+          .json({ message: "Branch manager sin centro asignado." });
+      query.healthCenter = req.user.health;
+    }
+
+    // Filtro de género
+    if (gender && ["Masculino", "Femenino"].includes(gender)) {
+      query.gender = gender;
+    }
+
+    // Búsqueda por texto (nombre, apellido, email, código SUS)
+    if (search) {
+      query.$or = [
+        { firstName: { $regex: search, $options: "i" } },
+        { lastName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { susCode: { $regex: search, $options: "i" } },
+      ];
+    }
+
     const paginatedPatients = await paginate(
       Patient,
       page,
@@ -26,7 +68,6 @@ const getPatients = async (req, res) => {
       "healthCenter"
     );
 
-    // Formatear fechas antes de enviar la respuesta
     paginatedPatients.results = paginatedPatients.results.map((patient) => ({
       ...patient.toObject(),
       createdAt: dayjs(patient.createdAt).format("DD/MM/YYYY HH:mm:ss"),
