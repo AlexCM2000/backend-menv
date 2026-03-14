@@ -16,6 +16,7 @@ import treatmentRoutes from "./routes/treatmentRoutes.js";
 import healthRecordRoutes from "./routes/healthRecordRoute.js";
 import patientRoutes from "./routes/medical-history/patientRoutes.js";
 import userListRoutes from "./routes/users/usersRoutes.js";
+import exportRoutes from "./routes/exportRoutes.js";
 
 //variables de entorno
 dotenv.config();
@@ -57,6 +58,7 @@ app.use("/api/treatments", treatmentRoutes);
 app.use("/api/health-records", healthRecordRoutes);
 app.use("/api/patient", patientRoutes);
 app.use("/api/usersList", userListRoutes);
+app.use("/api/export",   exportRoutes);
 
 const PORT = process.env.PORT || 4000;
 

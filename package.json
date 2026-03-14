@@ -16,8 +16,10 @@
     "cors": "^2.8.5",
     "date-fns": "^3.6.0",
     "dayjs": "^1.11.13",
+    "exceljs": "^4.4.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "nodemailer": "^6.9.14"
+    "nodemailer": "^6.9.14",
+    "pdfkit": "^0.17.2"
   }
 }
