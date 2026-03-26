@@ -1,6 +1,6 @@
-import { json } from "express";
 import Appointment from "../models/Appointment.js";
 import User from "../models/User.js";
+import Doctor from "../models/Doctor.js";
 import { parse, formatISO, startOfDay, endOfDay, isValid } from "date-fns";
 import { formatDate, handleNotFoundError, validateObjectId } from "../utils/index.js";
 import { sendEmailDeleteAppointment, sendEmailNewAppointment, sendEmailUpdateAppointment } from "../emails/appointmentEmailService.js";
@@ -32,74 +32,159 @@ const createAppointment = async (req, res) => {
 
     const healthId = new mongoose.Types.ObjectId(appointmentHealth);
 
+    // Normalizar la fecha al inicio del día para consistencia
+    const normalizedDate = startOfDay(new Date(date));
+
+    // Determinar el médico a asignar
+    let doctorToAssign = req.body.doctor || null;
+
+    if (doctorToAssign) {
+        // Médico específico: verificar que no esté duplicado
+        const existing = await Appointment.findOne({
+            doctor: doctorToAssign,
+            time,
+            date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) }
+        });
+        if (existing) {
+            return res.status(409).json({ msg: "Este médico ya tiene una cita en este horario. Selecciona otro médico u otro horario." });
+        }
+    } else {
+        // Sin médico: auto-asignar de la categoría del servicio
+        if (req.body.services && req.body.services.length > 0) {
+            const ServicesModel = (await import("../models/Services.js")).default;
+            const service = await ServicesModel.findById(req.body.services[0]);
+            if (service?.category) {
+                const availableDoctors = await Doctor.find({
+                    health: healthId,
+                    specialty: service.category,
+                    active: true
+                });
+
+                if (availableDoctors.length > 0) {
+                    // Médicos ya ocupados en este horario
+                    const bookedAppointments = await Appointment.find({
+                        health: healthId,
+                        time,
+                        date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) },
+                        doctor: { $ne: null }
+                    }).select("doctor");
+                    const bookedDoctorIds = bookedAppointments.map(a => a.doctor.toString());
+                    const freeDoctors = availableDoctors.filter(d => !bookedDoctorIds.includes(d._id.toString()));
+
+                    if (freeDoctors.length === 0) {
+                        return res.status(409).json({ msg: "No hay médicos disponibles en este horario para esta especialidad." });
+                    }
+                    doctorToAssign = freeDoctors[0]._id;
+                }
+            }
+        }
+    }
+
     const newAppointmentData = {
         services: req.body.services,
-        date,
+        date: normalizedDate,
         time,
         totalAmount,
         state: req.body.state || "Pendiente",
-        doctor: req.body.doctor || null,
+        doctor: doctorToAssign,
         user: appointmentUserId,
         health: healthId,
     };
 
+    // Guardar con manejo de race condition (índice único)
+    const newAppointment = new Appointment(newAppointmentData);
     try {
-        const newAppointment = new Appointment(newAppointmentData);
         const result = await newAppointment.save();
-
         await sendEmailNewAppointment({
             date: formatDate(result.date),
             time: result.time,
         });
-
         return res.json({ msg: "Cita creada correctamente" });
+    } catch (saveError) {
+        if (saveError.code === 11000) {
+            return res.status(409).json({ msg: "Este horario fue tomado en el último momento. Por favor selecciona otro horario." });
+        }
+        console.log(saveError);
+        return res.status(500).json({ msg: "Error al crear la cita" });
+    }
+}
+
+const getAppointmentDate = async (req, res) => {
+    const { date } = req.query;
+    const newDate = parse(date, "dd/MM/yyyy", new Date());
+    try {
+        if (!isValid(newDate)) {
+            return res.status(400).json({ message: "Fecha inválida" });
+        }
+        const isoDate = formatISO(newDate);
+        const query = {
+            date: {
+                $gte: startOfDay(new Date(isoDate)),
+                $lte: endOfDay(new Date(isoDate))
+            }
+        };
+        // Filtrar por health center del usuario
+        if (req.user.health) query.health = req.user.health;
+        const appointments = await Appointment.find(query).select("time doctor");
+        return res.json(appointments);
     } catch (error) {
         console.log(error);
-        return res.status(500).json({ message: "Error al crear la cita" });
+        return res.status(500).json({ message: "Error al obtener citas" });
     }
-}
+};
 
-const getAppointmentDate =async(req,res)=>{
-    const {date} = req.query
-    const newDate = parse(date,"dd/MM/yyyy", new Date())
+const getAvailability = async (req, res) => {
     try {
-        if(!isValid(newDate)){
-            const error = new Error("Fecha invalida")
-            return res.status(400).json({message:error.message})
+        const { date, category, excludeId } = req.query;
+        if (!date || !category) return res.status(400).json({ msg: "date y category son requeridos" });
+
+        const newDate = parse(date, "dd/MM/yyyy", new Date());
+        if (!isValid(newDate)) return res.status(400).json({ msg: "Fecha inválida" });
+
+        const healthId = req.user.health;
+
+        // Médicos activos de esa especialidad en el centro
+        const doctors = await Doctor.find({
+            health: healthId,
+            specialty: category,
+            active: true
+        }).select("_id name specialty");
+
+        // Citas en ese centro ese día
+        const isoDate = formatISO(newDate);
+        const appointmentQuery = {
+            health: healthId,
+            date: { $gte: startOfDay(new Date(isoDate)), $lte: endOfDay(new Date(isoDate)) }
+        };
+        // Excluir la cita actual si se está editando
+        if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
+            appointmentQuery._id = { $ne: excludeId };
         }
-        const isoDate = formatISO(newDate)
-        const appointments = await Appointment.find({date:
-            {
-                $gte:startOfDay(new Date(isoDate)),
-                $lte:endOfDay(new Date(isoDate))
-            }
-        }).select("time")
-      return  res.json(
-            appointments
-        ) 
+
+        const appointments = await Appointment.find(appointmentQuery).select("time doctor");
+
+        return res.json({ doctors, appointments });
     } catch (error) {
-        console.log(error)
+        console.error(error);
+        return res.status(500).json({ msg: "Error al obtener disponibilidad" });
     }
-    
+};
 
-}
-
-const getAppointmentById =async(req, res)=>{
-const {id}=req.params
-    if(validateObjectId(id,res)) return
+const getAppointmentById = async (req, res) => {
+    const { id } = req.params;
+    if (validateObjectId(id, res)) return;
 
     //validar que exista
-    const appointment = await Appointment.findById(id).populate("services")
-    if(!appointment){
-      
-        return handleNotFoundError("La cita no existe", res)
+    const appointment = await Appointment.findById(id).populate("services");
+    if (!appointment) {
+        return handleNotFoundError("La cita no existe", res);
     }
-    if(appointment.user._id.toString() !== req.user._id.toString()){
-        const error = new Error("No tienes los permisos para ver esta cita")
-        return res.status(403).json({msg:error.message})
+    if (appointment.user._id.toString() !== req.user._id.toString()) {
+        const error = new Error("No tienes los permisos para ver esta cita");
+        return res.status(403).json({ msg: error.message });
     }
     //retornar
-    res.json(appointment)
+    res.json(appointment);
 }
 
 const updateAppointment = async (req, res) => {
@@ -122,10 +207,10 @@ const updateAppointment = async (req, res) => {
 
     // Definir los estados válidos
     const validStates = [
-        'Pendiente', 
-        'Reprogramada', 
-        'Cancelada', 
-        'Completada', 
+        'Pendiente',
+        'Reprogramada',
+        'Cancelada',
+        'Completada',
         'No asistio'
     ];
 
@@ -162,73 +247,69 @@ const updateAppointment = async (req, res) => {
 };
 
 
-const deleteAppointment =async(req, res)=>{
-    const {id}=req.params
-    if(validateObjectId(id,res)) return
+const deleteAppointment = async (req, res) => {
+    const { id } = req.params;
+    if (validateObjectId(id, res)) return;
     //validar que exista
-    const appointment = await Appointment.findById(id).populate("services")
-    if(!appointment){
-      
-        return handleNotFoundError("La cita no existe", res)
+    const appointment = await Appointment.findById(id).populate("services");
+    if (!appointment) {
+        return handleNotFoundError("La cita no existe", res);
     }
-    if(appointment.user._id.toString() !== req.user._id.toString()){
-        const error = new Error("No tienes los permisos para ver esta cita")
-        return res.status(403).json({msg:error.message})
+    if (appointment.user._id.toString() !== req.user._id.toString()) {
+        const error = new Error("No tienes los permisos para ver esta cita");
+        return res.status(403).json({ msg: error.message });
     }
     try {
-        const result = await appointment.deleteOne()
+        const result = await appointment.deleteOne();
 
         await sendEmailDeleteAppointment({
-            date:formatDate(result.date),
-            time:result.time,
-        })
+            date: formatDate(result.date),
+            time: result.time,
+        });
 
-        //mostrar mensaje
-
-        res.json({msg:"Cita eliminada correctamente"})
+        res.json({ msg: "Cita eliminada correctamente" });
 
     } catch (error) {
-        console.log(error)
+        console.log(error);
     }
 }
 
 const getCalendarAppointments = async (req, res) => {
-    const { start, end } = req.query
-    const user = req.user
+    const { start, end } = req.query;
+    const user = req.user;
 
     if (!start || !end) {
-        return res.status(400).json({ msg: "Se requieren los parámetros start y end" })
+        return res.status(400).json({ msg: "Se requieren los parámetros start y end" });
     }
 
     try {
         const query = {
             date: { $gte: new Date(start), $lte: new Date(end) }
-        }
+        };
 
         if (user.admin) {
             // Admin total: ve todas las citas sin filtro
         } else if (user.branchManager) {
             // Gestor de sucursal: solo ve las citas de su centro
-            if (user.health) query.health = user.health
+            if (user.health) query.health = user.health;
         } else {
             // Usuario regular: solo sus propias citas
-            query.user = user._id
+            query.user = user._id;
         }
 
         const appointments = await Appointment.find(query)
             .populate('services', 'name category')
             .populate('user', 'name')
-            .populate('health', 'name')
+            .populate('health', 'name');
 
-        res.json(appointments)
+        res.json(appointments);
     } catch (error) {
-        console.log(error)
-        res.status(500).json({ msg: "Error al obtener las citas del calendario" })
+        console.log(error);
+        res.status(500).json({ msg: "Error al obtener las citas del calendario" });
     }
 }
 
 //exportar
-
 export {
-    createAppointment, getAppointmentDate, getAppointmentById, updateAppointment, deleteAppointment, getCalendarAppointments
+    createAppointment, getAppointmentDate, getAvailability, getAppointmentById, updateAppointment, deleteAppointment, getCalendarAppointments
 }

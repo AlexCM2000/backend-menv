@@ -1,111 +1,133 @@
 import Services from "../models/Services.js";
 import { handleNotFoundError, validateObjectId } from "../utils/index.js";
+import paginate from "../utils/pagination.js";
 
 const createService = async (req, res) => {
-  console.log(req.body);
-  if (Object.values(req.body).includes("")) {
-    const error = new Error("todos los campos son obligatorios");
-    return res.status(400).json({
-      msg: error.message,
-    });
+  const isStaff = req.user.admin || req.user.branchManager;
+  if (!isStaff) {
+    return res.status(403).json({ msg: "No tienes permisos para crear servicios" });
+  }
+
+  const { name, price, category } = req.body;
+  if (!name || name.trim() === "" || price === undefined || price === "" || !category || category.trim() === "") {
+    return res.status(400).json({ msg: "Todos los campos son obligatorios" });
   }
 
   try {
-    const service = new Services(req.body);
-    const result = await service.save();
-    //res.json(result);
-    res.json({
-      msg: "el servicio se creó correctamente",
-    });
+    const service = new Services({ name: name.trim(), price, category: category.trim() });
+    const saved = await service.save();
+    return res.json({ msg: "El servicio se creó correctamente", service: saved });
   } catch (error) {
     console.log(error);
+    return res.status(500).json({ msg: "Error al crear el servicio" });
   }
 };
 
-const getServices = async (req, res) => {
+const getServices = async (_req, res) => {
   try {
     const services = await Services.find();
     res.json(services);
   } catch (error) {
     console.log(error);
-    // res.json(services);
   }
 };
 
-// En serviceController.js
- const getServicesByCategory = async (req, res) => {
-  const { category } = req.params; // Obtiene la categoría de los parámetros
-
+const getServicesPaginated = async (req, res) => {
   try {
-    const services = await Services.find({ category }); // Filtra los servicios por categoría
+    const { page = 1, page_size = 10, search, category } = req.query;
+    const query = {};
+
+    if (search && search.trim() !== "") {
+      query.name = { $regex: search.trim(), $options: "i" };
+    }
+    if (category && category.trim() !== "") {
+      query.category = category.trim();
+    }
+
+    const result = await paginate(Services, Number(page), Number(page_size), query);
+    return res.json(result);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ msg: "Error al obtener servicios" });
+  }
+};
+
+const getServicesByCategory = async (req, res) => {
+  const { category } = req.params;
+  try {
+    const services = await Services.find({ category });
     res.json(services);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: 'Error al obtener servicios por categoría' });
+    res.status(500).json({ msg: "Error al obtener servicios por categoría" });
   }
 };
 
 const getServiceById = async (req, res) => {
   const { id } = req.params;
   if (validateObjectId(id, res)) return;
-  // VALIDAR QUE EXISTA
   const service = await Services.findById(id);
   if (!service) {
     return handleNotFoundError("El registro no existe", res);
   }
-  //MOSTRAR EL SERVICIO
   res.json(service);
 };
 
 const updateService = async (req, res) => {
-  const { id } = req.params;
+  const isStaff = req.user.admin || req.user.branchManager;
+  if (!isStaff) {
+    return res.status(403).json({ msg: "No tienes permisos para editar servicios" });
+  }
 
-  //VALIDAR UN OBJECT ID
+  const { id } = req.params;
   if (validateObjectId(id, res)) return;
 
-  // VALIDAR QUE EXISTA
   const service = await Services.findById(id);
   if (!service) {
     return handleNotFoundError("El registro no existe", res);
   }
 
   service.name = req.body.name || service.name;
-  service.price = req.body.price || service.price;
+  service.price = req.body.price !== undefined ? req.body.price : service.price;
+  service.category = req.body.category || service.category;
 
   try {
     await service.save();
-    res.json(service);
+    res.json({ msg: "El servicio se actualizó correctamente", service });
   } catch (error) {
     console.log(error);
+    res.status(500).json({ msg: "Error al actualizar el servicio" });
   }
 };
 
 const deleteService = async (req, res) => {
-  const { id } = req.params;
+  const isStaff = req.user.admin || req.user.branchManager;
+  if (!isStaff) {
+    return res.status(403).json({ msg: "No tienes permisos para eliminar servicios" });
+  }
 
-  //VALIDAR UN OBJECT ID
+  const { id } = req.params;
   if (validateObjectId(id, res)) return;
 
-  // VALIDAR QUE EXISTA
   const service = await Services.findById(id);
   if (!service) {
     return handleNotFoundError("El registro no existe", res);
   }
   try {
     await service.deleteOne();
-    res.json({
-      msg: "el servicio se elimino correctamente",
-    });
+    res.json({ msg: "El servicio se eliminó correctamente" });
   } catch (error) {
     console.log(error);
+    res.status(500).json({ msg: "Error al eliminar el servicio" });
   }
 };
 
 export {
   getServices,
+  getServicesPaginated,
   createService,
   getServiceById,
   updateService,
   deleteService,
-  getServicesByCategory
+  getServicesByCategory,
 };
