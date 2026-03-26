@@ -55,7 +55,9 @@ const getServicesPaginated = async (req, res) => {
 const getServicesByCategory = async (req, res) => {
   const { category } = req.params;
   try {
-    const services = await Services.find({ category });
+    const services = await Services.find({
+      category: { $regex: new RegExp(`^${category.trim()}$`, "i") }
+    });
     res.json(services);
   } catch (error) {
     console.error(error);
