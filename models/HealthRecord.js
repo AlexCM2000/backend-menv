@@ -44,6 +44,7 @@ const healthRecordSchema = new mongoose.Schema(
         description: String,
         date: { type: Date, default: Date.now },
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        doctor: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", default: null },
       },
     ],
 
@@ -96,6 +97,7 @@ const healthRecordSchema = new mongoose.Schema(
         note: String,
         date: { type: Date, default: Date.now },
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        doctor: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", default: null },
       },
     ],
 

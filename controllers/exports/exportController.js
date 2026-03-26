@@ -121,6 +121,7 @@ export const exportAppointments = async (req, res) => {
       .populate("services", "name category")
       .populate("health", "name")
       .populate("user", "name email")
+      .populate("doctor", "name specialty")
       .sort({ date: -1 })
       .lean();
 
@@ -128,11 +129,12 @@ export const exportAppointments = async (req, res) => {
     const isStaff = req.user.admin || req.user.branchManager;
     const pdfColumns = [
       { label: "N°",            key: "num",      width: 4  },
-      { label: "Servicio",      key: "servicio", width: 22 },
+      { label: "Servicio",      key: "servicio", width: 20 },
       { label: "Fecha",         key: "fecha",    width: 11 },
       { label: "Hora",          key: "hora",     width: 8  },
-      ...(isStaff ? [{ label: "Paciente", key: "paciente", width: 20 }] : []),
-      { label: "Centro médico", key: "centro",   width: 18 },
+      ...(isStaff ? [{ label: "Paciente", key: "paciente", width: 18 }] : []),
+      { label: "Médico",        key: "medico",   width: 18 },
+      { label: "Centro médico", key: "centro",   width: 16 },
       { label: "Estado",        key: "estado",   width: 13 },
       { label: "Total (Bs.)",   key: "total",    width: 10 },
     ];
@@ -148,25 +150,29 @@ export const exportAppointments = async (req, res) => {
             { label: "Email",    key: "email",    excelWidth: 28 },
           ]
         : []),
-      { label: "Centro médico", key: "centro",   excelWidth: 22 },
-      { label: "Estado",        key: "estado",   excelWidth: 14 },
-      { label: "Total (Bs.)",   key: "total",    excelWidth: 12 },
+      { label: "Médico",        key: "medico",    excelWidth: 22 },
+      { label: "Especialidad",  key: "especialidad", excelWidth: 20 },
+      { label: "Centro médico", key: "centro",    excelWidth: 22 },
+      { label: "Estado",        key: "estado",    excelWidth: 14 },
+      { label: "Total (Bs.)",   key: "total",     excelWidth: 12 },
     ];
     const columns = format === "pdf" ? pdfColumns : xlsxColumns;
 
     const totalRevenue = appointments.reduce((s, a) => s + (a.totalAmount || 0), 0);
 
     const rows = appointments.map((a, i) => ({
-      num:       i + 1,
-      servicio:  a.services?.[0]?.name ?? "—",
-      categoria: a.services?.[0]?.category ?? "—",
-      fecha:     a.date ? dayjs(a.date).format("DD/MM/YYYY") : "—",
-      hora:      a.time ?? "—",
-      paciente:  a.user?.name ?? "—",
-      email:     a.user?.email ?? "—",
-      centro:    a.health?.name ?? "—",
-      estado:    a.state ?? "—",
-      total:     formatBs(a.totalAmount),
+      num:          i + 1,
+      servicio:     a.services?.[0]?.name ?? "—",
+      categoria:    a.services?.[0]?.category ?? "—",
+      fecha:        a.date ? dayjs(a.date).format("DD/MM/YYYY") : "—",
+      hora:         a.time ?? "—",
+      paciente:     a.user?.name ?? "—",
+      email:        a.user?.email ?? "—",
+      medico:       a.doctor?.name ?? "Sin asignar",
+      especialidad: a.doctor?.specialty ?? "—",
+      centro:       a.health?.name ?? "—",
+      estado:       a.state ?? "—",
+      total:        formatBs(a.totalAmount),
     }));
 
     // ── Resumen ─────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const healthSchema = mongoose.Schema({
+const doctorSchema = mongoose.Schema({
     name: {
         type: String,
         required: true,
@@ -20,9 +20,10 @@ const healthSchema = mongoose.Schema({
     contactInfo: {
         email: {
             type: String,
-            required: false,
+            sparse: true,
             unique: true,
-            trim: true
+            trim: true,
+            lowercase: true
         },
         phone: {
             type: String,
@@ -36,14 +37,19 @@ const healthSchema = mongoose.Schema({
     },
     yearsOfExperience: {
         type: Number,
-        default: 0
+        default: 0,
+        min: 0
     },
-    health:{
+    health: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Health",
         required: true
     },
+    active: {
+        type: Boolean,
+        default: true
+    }
 }, { timestamps: true });
 
-const Doctor = mongoose.model("Doctor", healthSchema);
+const Doctor = mongoose.model("Doctor", doctorSchema);
 export default Doctor;

@@ -1,47 +1,62 @@
 import { json } from "express";
 import Appointment from "../models/Appointment.js";
+import User from "../models/User.js";
 import { parse, formatISO, startOfDay, endOfDay, isValid } from "date-fns";
 import { formatDate, handleNotFoundError, validateObjectId } from "../utils/index.js";
 import { sendEmailDeleteAppointment, sendEmailNewAppointment, sendEmailUpdateAppointment } from "../emails/appointmentEmailService.js";
 import mongoose from "mongoose";
 
 
-const createAppointment =async(req,res)=>
-{
-    const appointment =req.body
-    appointment.user=req.user._id.toString()
+const createAppointment = async (req, res) => {
+    const isStaff = req.user.admin || req.user.branchManager;
 
-    const user = req.user;
-console.log("ESTE ES USUARIO: "+user)
-    // Verificar si el usuario tiene un centro de salud asociado
-    if (!user.health) {
-      return res.status(400).json({ message: "El usuario no tiene un centro de salud asignado." });
+    // Admin/branchManager pueden crear citas para otro usuario (targetUserId en body)
+    let appointmentUserId = req.user._id.toString();
+    let appointmentHealth = req.user.health;
+
+    if (isStaff && req.body.targetUserId) {
+        const targetUser = await User.findById(req.body.targetUserId).select("health");
+        if (!targetUser) {
+            return res.status(404).json({ message: "Usuario no encontrado." });
+        }
+        appointmentUserId = targetUser._id.toString();
+        appointmentHealth = targetUser.health;
+    } else if (!req.user.health) {
+        return res.status(400).json({ message: "El usuario no tiene un centro de salud asignado." });
     }
 
-    const { date, totalAmount ,time} = req.body;
-    // Verificar que todos los campos requeridos estén presentes
+    const { date, totalAmount, time } = req.body;
     if (!date || !Number.isFinite(totalAmount) || !time) {
-      return res.status(400).json({ message: "Todos los campos son obligatorios" });
+        return res.status(400).json({ message: "Todos los campos son obligatorios" });
     }
-    const healthId = new mongoose.Types.ObjectId(user.health); // Convierte health a ObjectId
 
-    const newAppointmentData = Object.assign({}, appointment, {
-        health: healthId, // Agregar el ID del centro de salud
-      });
-try {
-    const newAppointment = new Appointment(newAppointmentData)
-  const result =  await newAppointment.save()
+    const healthId = new mongoose.Types.ObjectId(appointmentHealth);
 
-    await sendEmailNewAppointment({
-        date:formatDate(result.date),
-        time:result.time,
-       
-    })
+    const newAppointmentData = {
+        services: req.body.services,
+        date,
+        time,
+        totalAmount,
+        state: req.body.state || "Pendiente",
+        doctor: req.body.doctor || null,
+        user: appointmentUserId,
+        health: healthId,
+    };
 
-  return res.json({msg:"Cita creada correctamente"})
-} catch (error) {
-    console.log(error)  
-}
+    try {
+        const newAppointment = new Appointment(newAppointmentData);
+        const result = await newAppointment.save();
+
+        await sendEmailNewAppointment({
+            date: formatDate(result.date),
+            time: result.time,
+        });
+
+        return res.json({ msg: "Cita creada correctamente" });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({ message: "Error al crear la cita" });
+    }
 }
 
 const getAppointmentDate =async(req,res)=>{
@@ -103,7 +118,7 @@ const updateAppointment = async (req, res) => {
         return res.status(403).json({ msg: error.message });
     }
 
-    const { services, time, date, totalAmount, state } = req.body;
+    const { services, time, date, totalAmount, state, doctor } = req.body;
 
     // Definir los estados válidos
     const validStates = [
@@ -126,6 +141,7 @@ const updateAppointment = async (req, res) => {
     if (services) appointment.services = services;
     if (time) appointment.time = time;
     if (totalAmount) appointment.totalAmount = totalAmount;
+    if (doctor !== undefined) appointment.doctor = doctor || null;
     appointment.state = state; // 'state' siempre se actualiza, ya que es obligatorio
 
     try {

@@ -166,8 +166,12 @@ export const getHealthRecord = async (req, res) => {
       return res.status(400).json({ message: "ID no válido." });
     }
     const record = await HealthRecord.findById(id)
-      .populate("patient", "firstName lastName susCode")
-      .populate("medicalAppointments");
+      .populate("patient", "firstName lastName susCode dateOfBirth gender contactInfo")
+      .populate("medicalAppointments")
+      .populate("diagnoses.createdBy", "name")
+      .populate("diagnoses.doctor", "name specialty")
+      .populate("observations.createdBy", "name")
+      .populate("observations.doctor", "name specialty");
     if (!record) return res.status(404).json({ message: "No encontrado." });
     return res.json(record);
   } catch (error) {

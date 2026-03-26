@@ -106,9 +106,10 @@ const getUserAppointments = async (req, res) => {
 
         // Realizar la consulta de citas médicas y usar populate para incluir los detalles del usuario
         const paginatedAppointments = await Appointment.find(query)
-            .populate('services') // Poblamos los servicios relacionados
-            .populate('health', 'name codigo') // Poblamos los detalles del centro de salud
-            .populate('user', 'name email sus') // Poblamos los detalles del usuario
+            .populate('services')
+            .populate('health', 'name codigo')
+            .populate('user', 'name email sus')
+            .populate('doctor', 'name specialty')
             .limit(page_size)
             .skip((page - 1) * page_size);
 
