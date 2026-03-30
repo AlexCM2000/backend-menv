@@ -2,6 +2,8 @@
 
 import User from "../models/User.js";
 import HealthCenter from "../models/HealthCenter.js";
+import Patient from "../models/Patient.js";
+import HealthRecord from "../models/HealthRecord.js";
 import {
   sendEmailPasswordReset,
   sendEmailVerification,
@@ -67,6 +69,32 @@ const register = async (req, res) => {
       email: saved.email,
       token: saved.token,
     });
+
+    // Auto-crear ficha de paciente + historial clínico (no bloqueante)
+    try {
+      const nameParts = nombre.trim().split(/\s+/);
+      const firstName = nameParts[0];
+      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : nameParts[0];
+
+      const patient = new Patient({
+        firstName,
+        lastName,
+        email: correo,
+        susCode,
+        healthCenter: health._id,
+        user: saved._id,
+      });
+      const savedPatient = await patient.save();
+
+      const healthRecord = new HealthRecord({ patient: savedPatient._id });
+      const savedRecord = await healthRecord.save();
+
+      savedPatient.medicalHistory = savedRecord._id;
+      await savedPatient.save();
+    } catch (autoErr) {
+      console.error("Error al crear historial automático (no bloqueante):", autoErr);
+    }
+
     return res.json({
       msg: "El usuario se creó correctamente, revisa tu email",
     });

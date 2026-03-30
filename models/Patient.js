@@ -12,44 +12,36 @@ const patientSchema = new mongoose.Schema(
     },
     dateOfBirth: {
       type: Date,
-      required: true,
     },
     gender: {
       type: String,
       enum: ["Masculino", "Femenino"],
-      required: true,
     },
     email: {
       type: String,
-      required: true,
       trim: true,
     },
     contactInfo: {
       phone: {
         type: String,
-        required: true,
         trim: true,
       },
       address: {
         type: String,
-        required: false,
         trim: true,
       },
     },
     emergencyContact: {
       name: {
         type: String,
-        required: true,
         trim: true,
       },
       phone: {
         type: String,
-        required: true,
         trim: true,
       },
       relationship: {
         type: String,
-        required: true,
         trim: true,
       },
     },

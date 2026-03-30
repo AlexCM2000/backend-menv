@@ -33,6 +33,11 @@ const appointmentSchema = mongoose.Schema({
         ref: "Doctor",
         default: null
     },
+    notes: {
+        type: String,
+        trim: true,
+        default: ""
+    },
     state: {
         type: String,
         enum: [

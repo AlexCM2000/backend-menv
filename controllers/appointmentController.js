@@ -1,6 +1,8 @@
 import Appointment from "../models/Appointment.js";
 import User from "../models/User.js";
 import Doctor from "../models/Doctor.js";
+import Patient from "../models/Patient.js";
+import HealthRecord from "../models/HealthRecord.js";
 import { parse, formatISO, startOfDay, endOfDay, isValid } from "date-fns";
 import { formatDate, handleNotFoundError, validateObjectId } from "../utils/index.js";
 import { sendEmailDeleteAppointment, sendEmailNewAppointment, sendEmailUpdateAppointment } from "../emails/appointmentEmailService.js";
@@ -87,6 +89,7 @@ const createAppointment = async (req, res) => {
         date: normalizedDate,
         time,
         totalAmount,
+        notes: req.body.notes || "",
         state: req.body.state || "Pendiente",
         doctor: doctorToAssign,
         user: appointmentUserId,
@@ -199,13 +202,13 @@ const updateAppointment = async (req, res) => {
         return handleNotFoundError("La cita no existe", res);
     }
 
-    // Validar permisos de usuario
-    if (appointment.user._id.toString() !== req.user._id.toString()) {
-        const error = new Error("No tienes los permisos para ver esta cita");
-        return res.status(403).json({ msg: error.message });
+    // Validar permisos: admin y branchManager pueden actualizar cualquier cita
+    const isStaff = req.user.admin || req.user.branchManager;
+    if (!isStaff && appointment.user._id.toString() !== req.user._id.toString()) {
+        return res.status(403).json({ msg: "No tienes los permisos para modificar esta cita" });
     }
 
-    const { services, time, date, totalAmount, state, doctor } = req.body;
+    const { services, time, date, totalAmount, state, doctor, notes } = req.body;
 
     // Definir los estados válidos
     const validStates = [
@@ -229,18 +232,35 @@ const updateAppointment = async (req, res) => {
     if (time) appointment.time = time;
     if (totalAmount) appointment.totalAmount = totalAmount;
     if (doctor !== undefined) appointment.doctor = doctor || null;
-    appointment.state = state; // 'state' siempre se actualiza, ya que es obligatorio
+    if (notes !== undefined) appointment.notes = notes;
+    appointment.state = state;
 
     try {
         const result = await appointment.save();
 
-        // Enviar correo de actualización
+        // Auto-vincular al HistorialClínico cuando la cita se completa
+        if (state === "Completada") {
+            try {
+                const apptUser = await User.findById(appointment.user._id).select("susCode");
+                if (apptUser?.susCode) {
+                    const patient = await Patient.findOne({ susCode: apptUser.susCode, eliminado_en: null }).select("medicalHistory");
+                    if (patient?.medicalHistory) {
+                        await HealthRecord.findByIdAndUpdate(
+                            patient.medicalHistory,
+                            { $addToSet: { medicalAppointments: appointment._id } }
+                        );
+                    }
+                }
+            } catch (linkErr) {
+                console.error("Error al vincular cita al historial (no bloqueante):", linkErr);
+            }
+        }
+
         await sendEmailUpdateAppointment({
             date: formatDate(result.date),
             time: result.time,
         });
 
-        // Retornar mensaje de éxito
         res.json({ msg: "Cita actualizada correctamente" });
     } catch (error) {
         console.log(error);
