@@ -60,22 +60,24 @@ const createAppointment = async (req, res) => {
                     active: true
                 });
 
-                if (availableDoctors.length > 0) {
-                    // Médicos ya ocupados en este horario
-                    const bookedAppointments = await Appointment.find({
-                        health: healthId,
-                        time,
-                        date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) },
-                        doctor: { $ne: null }
-                    }).select("doctor");
-                    const bookedDoctorIds = bookedAppointments.map(a => a.doctor.toString());
-                    const freeDoctors = availableDoctors.filter(d => !bookedDoctorIds.includes(d._id.toString()));
-
-                    if (freeDoctors.length === 0) {
-                        return res.status(409).json({ msg: "No hay médicos disponibles en este horario para esta especialidad." });
-                    }
-                    doctorToAssign = freeDoctors[0]._id;
+                if (availableDoctors.length === 0) {
+                    return res.status(409).json({ msg: `No hay médicos disponibles para la especialidad "${service.category}" en este centro de salud.` });
                 }
+
+                // Médicos ya ocupados en este horario
+                const bookedAppointments = await Appointment.find({
+                    health: healthId,
+                    time,
+                    date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) },
+                    doctor: { $ne: null }
+                }).select("doctor");
+                const bookedDoctorIds = bookedAppointments.map(a => a.doctor.toString());
+                const freeDoctors = availableDoctors.filter(d => !bookedDoctorIds.includes(d._id.toString()));
+
+                if (freeDoctors.length === 0) {
+                    return res.status(409).json({ msg: "No hay médicos disponibles en este horario para esta especialidad." });
+                }
+                doctorToAssign = freeDoctors[0]._id;
             }
         }
     }
