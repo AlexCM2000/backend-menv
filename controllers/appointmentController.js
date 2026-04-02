@@ -100,10 +100,8 @@ const createAppointment = async (req, res) => {
     const newAppointment = new Appointment(newAppointmentData);
     try {
         const result = await newAppointment.save();
-        await sendEmailNewAppointment({
-            date: formatDate(result.date),
-            time: result.time,
-        });
+        sendEmailNewAppointment({ date: formatDate(result.date), time: result.time })
+            .catch(err => console.error("Error al enviar email de nueva cita:", err));
         return res.json({ msg: "Cita creada correctamente" });
     } catch (saveError) {
         if (saveError.code === 11000) {
@@ -256,10 +254,8 @@ const updateAppointment = async (req, res) => {
             }
         }
 
-        await sendEmailUpdateAppointment({
-            date: formatDate(result.date),
-            time: result.time,
-        });
+        sendEmailUpdateAppointment({ date: formatDate(result.date), time: result.time })
+            .catch(err => console.error("Error al enviar email de actualización:", err));
 
         res.json({ msg: "Cita actualizada correctamente" });
     } catch (error) {
@@ -284,15 +280,14 @@ const deleteAppointment = async (req, res) => {
     try {
         const result = await appointment.deleteOne();
 
-        await sendEmailDeleteAppointment({
-            date: formatDate(result.date),
-            time: result.time,
-        });
+        sendEmailDeleteAppointment({ date: formatDate(result.date), time: result.time })
+            .catch(err => console.error("Error al enviar email de eliminación:", err));
 
         res.json({ msg: "Cita eliminada correctamente" });
 
     } catch (error) {
         console.log(error);
+        res.status(500).json({ msg: "Error al eliminar la cita" });
     }
 }
 

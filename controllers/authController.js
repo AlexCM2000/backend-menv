@@ -12,12 +12,10 @@ import { generateJWT, uniqueId } from "../utils/index.js";
 import Sus from "../models/Sus.js";
 
 const register = async (req, res) => {
-  const { email: correo, password, name: nombre, codigo, susCode } = req.body;
-
-  console.log(req.body);
+  const { email: correo, password, primerApellido, segundoApellido, nombres, codigo, susCode } = req.body;
 
   // 1) Todos los campos obligatorios
-  if (![correo, password, nombre, codigo, susCode].every(Boolean)) {
+  if (![correo, password, primerApellido, nombres, codigo, susCode].every(Boolean)) {
     return res.status(400).json({ msg: "Todos los campos son obligatorios" });
   }
 
@@ -57,28 +55,28 @@ const register = async (req, res) => {
   // 7) Crear y guardar usuario
   try {
     const newUser = new User({
-      name: nombre,
+      primerApellido,
+      segundoApellido: segundoApellido || "",
+      nombres,
       email: correo,
       password,
       health: health._id,
       susCode,
     });
     const saved = await newUser.save();
+    const fullName = [saved.primerApellido, saved.segundoApellido, saved.nombres].filter(Boolean).join(" ");
     sendEmailVerification({
-      name: saved.name,
+      name: fullName,
       email: saved.email,
       token: saved.token,
     });
 
     // Auto-crear ficha de paciente + historial clínico (no bloqueante)
     try {
-      const nameParts = nombre.trim().split(/\s+/);
-      const firstName = nameParts[0];
-      const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : nameParts[0];
-
       const patient = new Patient({
-        firstName,
-        lastName,
+        primerApellido,
+        segundoApellido: segundoApellido || "",
+        nombres,
         email: correo,
         susCode,
         healthCenter: health._id,
@@ -146,8 +144,9 @@ const forgotPassword = async (req, res) => {
   try {
     user.token = uniqueId();
     await user.save();
+    const fullName = [user.primerApellido, user.segundoApellido, user.nombres].filter(Boolean).join(" ");
     await sendEmailPasswordReset({
-      name: user.name,
+      name: fullName,
       email: user.email,
       token: user.token,
     });

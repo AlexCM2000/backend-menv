@@ -1,4 +1,6 @@
 import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc.js"
+dayjs.extend(utc);
 import Appointment from "../../models/Appointment.js";
 import HealthRecord from "../../models/HealthRecord.js";
 import Health from "../../models/HealthCenter.js";
@@ -12,7 +14,7 @@ const isMongoObjectId = (v) =>
 /** Calcula edad en años a partir de fecha de nacimiento */
 const calcAge = (dob) => {
   if (!dob) return "—";
-  return `${dayjs().diff(dayjs(dob), "year")} años`;
+  return `${dayjs().diff(dayjs.utc(dob), "year")} años`;
 };
 
 /** Formatea moneda boliviana */
@@ -76,7 +78,9 @@ export const exportAppointments = async (req, res) => {
       if (search) {
         const users = await User.find({
           $or: [
-            { name:  { $regex: search, $options: "i" } },
+            { primerApellido: { $regex: search, $options: "i" } },
+            { segundoApellido: { $regex: search, $options: "i" } },
+            { nombres:  { $regex: search, $options: "i" } },
             { email: { $regex: search, $options: "i" } },
           ],
         }).select("_id");
@@ -89,7 +93,9 @@ export const exportAppointments = async (req, res) => {
       if (search) {
         const users = await User.find({
           $or: [
-            { name:  { $regex: search, $options: "i" } },
+            { primerApellido: { $regex: search, $options: "i" } },
+            { segundoApellido: { $regex: search, $options: "i" } },
+            { nombres:  { $regex: search, $options: "i" } },
             { email: { $regex: search, $options: "i" } },
           ],
         }).select("_id");
@@ -120,7 +126,7 @@ export const exportAppointments = async (req, res) => {
     const appointments = await Appointment.find(query)
       .populate("services", "name category")
       .populate("health", "name")
-      .populate("user", "name email")
+      .populate("user", "primerApellido segundoApellido nombres email")
       .populate("doctor", "name specialty")
       .sort({ date: -1 })
       .lean();
@@ -166,7 +172,7 @@ export const exportAppointments = async (req, res) => {
       categoria:    a.services?.[0]?.category ?? "—",
       fecha:        a.date ? dayjs(a.date).format("DD/MM/YYYY") : "—",
       hora:         a.time ?? "—",
-      paciente:     a.user?.name ?? "—",
+      paciente:     [a.user?.primerApellido, a.user?.segundoApellido, a.user?.nombres].filter(Boolean).join(" ") || "—",
       email:        a.user?.email ?? "—",
       medico:       a.doctor?.name ?? "Sin asignar",
       especialidad: a.doctor?.specialty ?? "—",
@@ -236,8 +242,9 @@ export const exportPatients = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { firstName: { $regex: search, $options: "i" } },
-        { lastName:  { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: search, $options: "i" } },
+        { segundoApellido: { $regex: search, $options: "i" } },
+        { nombres:   { $regex: search, $options: "i" } },
         { email:     { $regex: search, $options: "i" } },
         { susCode:   { $regex: search, $options: "i" } },
       ];
@@ -280,14 +287,14 @@ export const exportPatients = async (req, res) => {
 
     const rows = patients.map((p, i) => ({
       num:            i + 1,
-      nombre_completo:`${p.firstName ?? ""} ${p.lastName ?? ""}`.trim() || "—",
-      nombre:         p.firstName                              ?? "—",
-      apellido:       p.lastName                               ?? "—",
+      nombre_completo:[p.primerApellido, p.segundoApellido, p.nombres].filter(Boolean).join(" ") || "—",
+      nombre:         p.nombres                                ?? "—",
+      apellido:       [p.primerApellido, p.segundoApellido].filter(Boolean).join(" ") || "—",
       email:          p.email                                  ?? "—",
       sus:            p.susCode                                ?? "—",
       genero:         p.gender                                 ?? "—",
       edad:           calcAge(p.dateOfBirth),
-      nacimiento:     p.dateOfBirth ? dayjs(p.dateOfBirth).format("DD/MM/YYYY") : "—",
+      nacimiento:     p.dateOfBirth ? dayjs.utc(p.dateOfBirth).format("DD/MM/YYYY") : "—",
       telefono:       p.contactInfo?.phone                     ?? "—",
       centro:         p.healthCenter?.name                     ?? "—",
       condiciones:    p.medicalConditions?.filter(Boolean).join(", ") || "Ninguna",
@@ -375,7 +382,7 @@ export const exportHealthRecords = async (req, res) => {
     const records = await HealthRecord.find(filter)
       .populate({
         path: "patient",
-        select: "firstName lastName susCode email gender dateOfBirth contactInfo healthCenter",
+        select: "primerApellido segundoApellido nombres susCode email gender dateOfBirth contactInfo healthCenter",
         populate: { path: "healthCenter", select: "name" },
       })
       .sort({ createdAt: -1 })
@@ -417,7 +424,7 @@ export const exportHealthRecords = async (req, res) => {
         : null;
       return {
         num:         i + 1,
-        paciente:    `${r.patient?.firstName ?? ""} ${r.patient?.lastName ?? ""}`.trim() || "—",
+        paciente:    [r.patient?.primerApellido, r.patient?.segundoApellido, r.patient?.nombres].filter(Boolean).join(" ") || "—",
         sus:         r.patient?.susCode                          ?? "—",
         genero:      r.patient?.gender                           ?? "—",
         edad:        calcAge(r.patient?.dateOfBirth),
@@ -488,7 +495,9 @@ export const exportUsers = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { name:    { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: search, $options: "i" } },
+        { segundoApellido: { $regex: search, $options: "i" } },
+        { nombres:  { $regex: search, $options: "i" } },
         { email:   { $regex: search, $options: "i" } },
         { susCode: { $regex: search, $options: "i" } },
       ];
@@ -526,7 +535,7 @@ export const exportUsers = async (req, res) => {
 
     const rows = users.map((u, i) => ({
       num:        i + 1,
-      nombre:     u.name      ?? "—",
+      nombre:     [u.primerApellido, u.segundoApellido, u.nombres].filter(Boolean).join(" ") || "—",
       email:      u.email     ?? "—",
       sus:        u.susCode   ?? "—",
       rol:        getRol(u),

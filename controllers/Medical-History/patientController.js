@@ -50,11 +50,12 @@ const getPatients = async (req, res) => {
       query.gender = gender;
     }
 
-    // Búsqueda por texto (nombre, apellido, email, código SUS)
+    // Búsqueda por texto (apellidos, nombres, email, código SUS)
     if (search) {
       query.$or = [
-        { firstName: { $regex: search, $options: "i" } },
-        { lastName: { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: search, $options: "i" } },
+        { segundoApellido: { $regex: search, $options: "i" } },
+        { nombres: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
         { susCode: { $regex: search, $options: "i" } },
       ];
@@ -84,8 +85,9 @@ const getPatients = async (req, res) => {
 const createPatient = async (req, res) => {
   try {
     const {
-      firstName,
-      lastName,
+      primerApellido,
+      segundoApellido,
+      nombres,
       dateOfBirth,
       gender,
       email,
@@ -99,8 +101,8 @@ const createPatient = async (req, res) => {
 
     // 1) Campos obligatorios
     if (
-      !firstName ||
-      !lastName ||
+      !primerApellido ||
+      !nombres ||
       !dateOfBirth ||
       !gender ||
       !healthCenter ||
@@ -155,8 +157,9 @@ const createPatient = async (req, res) => {
     }
     // 8) Crear el paciente
     const newPatient = new Patient({
-      firstName,
-      lastName,
+      primerApellido,
+      segundoApellido: segundoApellido || "",
+      nombres,
       dateOfBirth,
       gender,
       contactInfo,
@@ -192,8 +195,9 @@ const updatePatient = async (req, res) => {
 
     // 2) Extraer datos del body
     const {
-      firstName,
-      lastName,
+      primerApellido,
+      segundoApellido,
+      nombres,
       dateOfBirth,
       gender,
       email,
@@ -201,7 +205,7 @@ const updatePatient = async (req, res) => {
       emergencyContact,
       medicalConditions = [],
       allergies = [],
-      healthCenter, // ESTE es tu código (string o número)
+      healthCenter,
       susCode,
     } = req.body;
 
@@ -258,8 +262,9 @@ const updatePatient = async (req, res) => {
     }
 
     // 7) Actualizar el resto de campos
-    patient.firstName = firstName ?? patient.firstName;
-    patient.lastName = lastName ?? patient.lastName;
+    patient.primerApellido = primerApellido ?? patient.primerApellido;
+    patient.segundoApellido = segundoApellido !== undefined ? segundoApellido : patient.segundoApellido;
+    patient.nombres = nombres ?? patient.nombres;
     patient.dateOfBirth = dateOfBirth ?? patient.dateOfBirth;
     patient.gender = gender ?? patient.gender;
     patient.contactInfo = contactInfo ?? patient.contactInfo;

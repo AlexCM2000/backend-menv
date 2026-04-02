@@ -1,14 +1,20 @@
 import mongoose from "mongoose";
 const patientSchema = new mongoose.Schema(
   {
-    firstName: {
+    primerApellido: {
       type: String,
       required: true,
       trim: true,
     },
-    lastName: {
+    segundoApellido: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    nombres: {
       type: String,
       required: true,
+      trim: true,
     },
     dateOfBirth: {
       type: Date,
