@@ -50,7 +50,9 @@ const getUsers = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: search, $options: "i" } },
+        { segundoApellido: { $regex: search, $options: "i" } },
+        { nombres: { $regex: search, $options: "i" } },
         { email: { $regex: search, $options: "i" } },
         { susCode: { $regex: search, $options: "i" } },
       ];
@@ -64,9 +66,14 @@ const getUsers = async (req, res) => {
       } else if (role === "branchManager") {
         query.branchManager = true;
         query.admin = { $ne: true };
+      } else if (role === "doctor") {
+        query.doctor = true;
+        query.admin = { $ne: true };
+        query.branchManager = { $ne: true };
       } else if (role === "user") {
         query.admin = { $ne: true };
         query.branchManager = { $ne: true };
+        query.doctor = { $ne: true };
       }
       if (verified === "true") query.verified = true;
       else if (verified === "false") query.verified = false;
@@ -77,7 +84,10 @@ const getUsers = async (req, res) => {
       page,
       pageSize,
       query,
-      "health",
+      [
+        { path: "health", select: "name codigo" },
+        { path: "doctorProfile", select: "name specialty" },
+      ],
     );
 
     paginatedUsers.results = paginatedUsers.results.map((u) => {
@@ -135,7 +145,7 @@ const updateUser = async (req, res) => {
 
     const payload = req.body;
 
-    const ownerFields = ["name", "email", "password", "susCode"];
+    const ownerFields = ["primerApellido", "segundoApellido", "nombres", "email", "password", "susCode"];
     ownerFields.forEach((field) => {
       if (payload[field] !== undefined) targetUser[field] = payload[field];
     });
@@ -164,6 +174,12 @@ const updateUser = async (req, res) => {
       if (payload.verified !== undefined)
         targetUser.verified = !!payload.verified;
 
+      // Rol médico
+      if (payload.doctor !== undefined) targetUser.doctor = !!payload.doctor;
+      if (payload.doctorProfile !== undefined) {
+        targetUser.doctorProfile = payload.doctorProfile || null;
+      }
+
       // ✅ FIX: usar regex estricto en lugar de ObjectId.isValid()
       //    ObjectId.isValid(200264) devuelve true para números → falla el cast
       if (payload.health !== undefined && payload.health !== null) {
@@ -185,6 +201,8 @@ const updateUser = async (req, res) => {
       if (
         payload.admin !== undefined ||
         payload.branchManager !== undefined ||
+        payload.doctor !== undefined ||
+        payload.doctorProfile !== undefined ||
         payload.verified !== undefined ||
         payload.health !== undefined
       ) {
@@ -198,7 +216,8 @@ const updateUser = async (req, res) => {
 
     const updatedUser = await User.findById(id)
       .select("-password")
-      .populate("health", "name codigo");
+      .populate("health", "name codigo")
+      .populate("doctorProfile", "name specialty");
     const userObj = updatedUser.toObject();
     if (userObj.createdAt)
       userObj.createdAt = dayjs(userObj.createdAt).format(

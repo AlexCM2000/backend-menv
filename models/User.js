@@ -4,7 +4,17 @@ import { uniqueId } from "../utils/index.js";
 
 const userSchema = mongoose.Schema(
   {
-    name: {
+    primerApellido: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    segundoApellido: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    nombres: {
       type: String,
       required: true,
       trim: true,
@@ -36,6 +46,15 @@ const userSchema = mongoose.Schema(
     branchManager: {
       type: Boolean,
       default: false,
+    },
+    doctor: {
+      type: Boolean,
+      default: false,
+    },
+    doctorProfile: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Doctor",
+      default: null,
     },
     health: {
       type: mongoose.Schema.Types.ObjectId,

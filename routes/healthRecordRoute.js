@@ -4,6 +4,7 @@ import {
   createHealthRecord,
   getHealthRecords,
   getHealthRecord,
+  getHealthRecordByAppointment,
   addObservation,
   addDiagnosis,
   addPreviousTreatment,
@@ -16,28 +17,32 @@ import {
 
 const router = express.Router();
 
-// Listar todos los historiales (auth para filtros por rol)
+// Listado paginado
 router.get("/", authMiddleware, getHealthRecords);
 
-// Crear un historial médico vacío para un paciente (requiere auth)
+// Crear nuevo historial
 router.post("/", authMiddleware, createHealthRecord);
 
-// Obtener un historial por ID
-router.get("/:id", getHealthRecord);
+// Obtener historial por cita (debe ir antes de /:id)
+router.get("/by-appointment/:appointmentId", authMiddleware, getHealthRecordByAppointment);
 
-// Añadir subdocumentos al historial existente
+// Detalle de historial por ID (protegido con auth)
+router.get("/:id", authMiddleware, getHealthRecord);
+
+// Agregar subdocumentos clínicos
 router.post("/:id/observations", authMiddleware, addObservation);
 router.post("/:id/diagnoses", authMiddleware, addDiagnosis);
 router.post("/:id/previous-treatments", authMiddleware, addPreviousTreatment);
 router.post("/:id/medications", authMiddleware, addMedication);
 router.post("/:id/allergies", authMiddleware, addAllergy);
 
-// Cambiar el estado del historial
+// Cambiar estado (activo / en tratamiento / cerrado)
 router.patch("/:id/state", authMiddleware, updateRecordState);
 
-// Archivar (soft-delete) un historial
+// Archivar (soft delete)
 router.delete("/:id", authMiddleware, archiveRecord);
 
-// Desarchivar un historial
+// Desarchivar
 router.patch("/:id/unarchive", authMiddleware, unarchiveHealthRecord);
+
 export default router;

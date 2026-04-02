@@ -36,7 +36,9 @@ const getUserAppointments = async (req, res) => {
         if (searchName) {
             const users = await User.find({
                 $or: [
-                    { name: { $regex: searchName, $options: "i" } },
+                    { primerApellido: { $regex: searchName, $options: "i" } },
+                    { segundoApellido: { $regex: searchName, $options: "i" } },
+                    { nombres: { $regex: searchName, $options: "i" } },
                     { email: { $regex: searchName, $options: "i" } }
                 ]
             });
@@ -57,7 +59,9 @@ const getUserAppointments = async (req, res) => {
         if (searchName) {
             const users = await User.find({
                 $or: [
-                    { name: { $regex: searchName, $options: "i" } },
+                    { primerApellido: { $regex: searchName, $options: "i" } },
+                    { segundoApellido: { $regex: searchName, $options: "i" } },
+                    { nombres: { $regex: searchName, $options: "i" } },
                     { email: { $regex: searchName, $options: "i" } }
                 ]
             });
@@ -70,15 +74,28 @@ const getUserAppointments = async (req, res) => {
                 return res.json({ page, page_size, count: 0, results: [] }); // Si no hay usuarios, devuelve vacío
             }
         }
+        } else if (req.user.doctor && req.user.doctorProfile) {
+            // Doctor: solo ve citas asignadas a su perfil de médico, en su centro de salud
+            query.doctor = req.user.doctorProfile;
+            if (req.user.health) query.health = req.user.health;
         } else {
-            // Para otros usuarios, filtrar por su ID de usuario
-            console.log("ESTE ES EL USUARIO "+req.user._id)
-            query = { 
-                user: req.user._id, 
-                date: { $gte: new Date() } 
-            };
-          console.log("ESTA ES LA QUERY:  =>   ")
-          console.log(query)
+            // Usuario regular: por defecto solo citas activas (Pendiente/Reprogramada)
+            // Si se pasa history=true, devuelve las finalizadas de los últimos 90 días
+            const showHistory = req.query.history === 'true';
+            if (showHistory) {
+                const ninetyDaysAgo = new Date();
+                ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+                query = {
+                    user: req.user._id,
+                    state: { $in: ['Cancelada', 'Completada', 'No asistio'] },
+                    date: { $gte: ninetyDaysAgo },
+                };
+            } else {
+                query = {
+                    user: req.user._id,
+                    state: { $in: ['Pendiente', 'Reprogramada'] },
+                };
+            }
         }
 
        
@@ -90,8 +107,8 @@ const getUserAppointments = async (req, res) => {
             query.state = stateFilter;
         }
 
-        // Filtro por rango de fecha (solo admin y branchManager)
-        if (req.user.admin || req.user.branchManager) {
+        // Filtro por rango de fecha (admin, branchManager y doctor)
+        if (req.user.admin || req.user.branchManager || req.user.doctor) {
             const { date_from, date_to } = req.query;
             if (date_from || date_to) {
                 query.date = {};
@@ -108,7 +125,7 @@ const getUserAppointments = async (req, res) => {
         const paginatedAppointments = await Appointment.find(query)
             .populate('services')
             .populate('health', 'name codigo')
-            .populate('user', 'name email sus')
+            .populate('user', 'primerApellido segundoApellido nombres email susCode')
             .populate('doctor', 'name specialty')
             .limit(page_size)
             .skip((page - 1) * page_size);
