@@ -27,6 +27,7 @@ const getUsers = async (req, res) => {
         .json({ message: "No autorizado: Usuario no autenticado" });
 
     if (req.user.admin) {
+      query._id = { $ne: req.user._id };
       if (req.query.health) {
         const hcQuery = isMongoObjectId(req.query.health)
           ? { _id: req.query.health }

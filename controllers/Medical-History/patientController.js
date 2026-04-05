@@ -22,7 +22,7 @@ const getPatients = async (req, res) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    const query = { eliminado_en: null };
+    const query = { eliminado_en: null, user: { $ne: req.user._id } };
 
     // Filtro por centro de salud según rol
     if (req.user.admin) {

@@ -6,6 +6,9 @@ import HealthRecord from "../../models/HealthRecord.js";
 import Health from "../../models/HealthCenter.js";
 import Patient from "../../models/Patient.js";
 import User from "../../models/User.js";
+import Doctor from "../../models/Doctor.js";
+import Services from "../../models/Services.js";
+import Category from "../../models/Category.js";
 import { buildExcel, buildPDF } from "../../utils/reportService.js";
 
 const isMongoObjectId = (v) =>
@@ -335,7 +338,7 @@ export const exportHealthRecords = async (req, res) => {
     if (!req.user) return res.status(403).json({ message: "No autorizado" });
 
     const format = getFormat(req);
-    const { search, state } = req.query;
+    const { search, state, date_from, date_to } = req.query;
 
     const filter = { archivedAt: null };
     let patientFilter = { eliminado_en: null };
@@ -359,10 +362,21 @@ export const exportHealthRecords = async (req, res) => {
 
     if (state && ["activo", "cerrado", "en tratamiento"].includes(state)) filter.state = state;
 
+    if (date_from || date_to) {
+      filter.createdAt = {};
+      if (date_from) filter.createdAt.$gte = new Date(date_from);
+      if (date_to) {
+        const end = new Date(date_to);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
     if (search) {
       patientFilter.$or = [
-        { firstName: { $regex: search, $options: "i" } },
-        { lastName:  { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: search, $options: "i" } },
+        { segundoApellido: { $regex: search, $options: "i" } },
+        { nombres:   { $regex: search, $options: "i" } },
         { susCode:   { $regex: search, $options: "i" } },
       ];
       needsLookup = true;
@@ -453,6 +467,8 @@ export const exportHealthRecords = async (req, res) => {
     const filters = buildFilterDesc([
       search     && `Búsqueda: "${search}"`,
       state      && `Estado: ${state}`,
+      date_from  && `Desde: ${dayjs(date_from).format("DD/MM/YYYY")}`,
+      date_to    && `Hasta: ${dayjs(date_to).format("DD/MM/YYYY")}`,
       healthName && `Centro: ${healthName}`,
     ]);
 
@@ -463,6 +479,232 @@ export const exportHealthRecords = async (req, res) => {
     sendFile(res, buffer, format, `historiales_${dayjs().format("YYYY-MM-DD")}`);
   } catch (err) {
     console.error("exportHealthRecords:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  EXPORT MÉDICOS
+// ═══════════════════════════════════════════════════════════════════════════════
+export const exportDoctors = async (req, res) => {
+  try {
+    if (!req.user) return res.status(403).json({ message: "No autorizado" });
+    const isStaff = req.user.admin || req.user.branchManager;
+    if (!isStaff) return res.status(403).json({ message: "Solo administradores y supervisores" });
+
+    const format = getFormat(req);
+    const { search, specialty, active } = req.query;
+
+    const query = {};
+    let healthName = null;
+
+    if (req.user.admin) {
+      if (req.query.health) {
+        const hc = await resolveHealth(req.query.health);
+        if (!hc) return res.status(404).json({ message: "Centro de salud no encontrado." });
+        query.health = hc._id;
+        healthName = hc.name;
+      }
+    } else {
+      query.health = req.user.health;
+    }
+
+    if (search) {
+      query.$or = [
+        { name:          { $regex: search, $options: "i" } },
+        { specialty:     { $regex: search, $options: "i" } },
+        { licenseNumber: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    if (specialty) query.specialty = specialty;
+    if (active === "true")  query.active = true;
+    else if (active === "false") query.active = false;
+
+    const doctors = await Doctor.find(query)
+      .populate("health", "name")
+      .sort({ name: 1 })
+      .lean();
+
+    const pdfColumns = [
+      { label: "N°",              key: "num",         width: 4  },
+      { label: "Nombre",          key: "nombre",      width: 22 },
+      { label: "Especialidad",    key: "especialidad",width: 18 },
+      { label: "Nº Licencia",     key: "licencia",    width: 14 },
+      { label: "Teléfono",        key: "telefono",    width: 12 },
+      { label: "Centro de salud", key: "centro",      width: 18 },
+      { label: "Estado",          key: "estado",      width: 10 },
+    ];
+    const xlsxColumns = [
+      { label: "N°",              key: "num",         excelWidth: 5  },
+      { label: "Nombre",          key: "nombre",      excelWidth: 25 },
+      { label: "Especialidad",    key: "especialidad",excelWidth: 20 },
+      { label: "Nº Licencia",     key: "licencia",    excelWidth: 16 },
+      { label: "Email",           key: "email",       excelWidth: 26 },
+      { label: "Teléfono",        key: "telefono",    excelWidth: 14 },
+      { label: "Experiencia",     key: "experiencia", excelWidth: 12 },
+      { label: "Centro de salud", key: "centro",      excelWidth: 22 },
+      { label: "Estado",          key: "estado",      excelWidth: 11 },
+      { label: "Fecha registro",  key: "registro",    excelWidth: 16 },
+    ];
+    const columns = format === "pdf" ? pdfColumns : xlsxColumns;
+
+    const rows = doctors.map((d, i) => ({
+      num:         i + 1,
+      nombre:      d.name                              ?? "—",
+      especialidad:d.specialty                         ?? "—",
+      licencia:    d.licenseNumber                     ?? "—",
+      email:       d.contactInfo?.email                ?? "—",
+      telefono:    d.contactInfo?.phone                ?? "—",
+      experiencia: d.yearsOfExperience != null ? `${d.yearsOfExperience} años` : "—",
+      centro:      d.health?.name                      ?? "—",
+      estado:      d.active ? "Activo" : "Inactivo",
+      registro:    d.createdAt ? dayjs(d.createdAt).format("DD/MM/YYYY") : "—",
+    }));
+
+    const summary = [
+      { label: "Total activos",   value: rows.filter((r) => r.estado === "Activo").length   },
+      { label: "Total inactivos", value: rows.filter((r) => r.estado === "Inactivo").length },
+    ].filter((s) => s.value > 0);
+
+    const filters = buildFilterDesc([
+      search    && `Búsqueda: "${search}"`,
+      specialty && `Especialidad: ${specialty}`,
+      active != null && active !== "" && `Estado: ${active === "true" ? "Activo" : "Inactivo"}`,
+      healthName && `Centro: ${healthName}`,
+    ]);
+
+    const buffer = format === "pdf"
+      ? await buildPDF({ title: "Reporte de Médicos", filters, columns, rows, summary })
+      : await buildExcel({ title: "Reporte de Médicos", filters, columns, rows, summary });
+
+    sendFile(res, buffer, format, `medicos_${dayjs().format("YYYY-MM-DD")}`);
+  } catch (err) {
+    console.error("exportDoctors:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  EXPORT SERVICIOS
+// ═══════════════════════════════════════════════════════════════════════════════
+export const exportServices = async (req, res) => {
+  try {
+    if (!req.user) return res.status(403).json({ message: "No autorizado" });
+    const isStaff = req.user.admin || req.user.branchManager;
+    if (!isStaff) return res.status(403).json({ message: "Solo administradores y supervisores" });
+
+    const format = getFormat(req);
+    const { search, category } = req.query;
+
+    const query = {};
+    if (search)   query.name     = { $regex: search, $options: "i" };
+    if (category) query.category = category;
+
+    const services = await Services.find(query).sort({ category: 1, name: 1 }).lean();
+
+    const pdfColumns = [
+      { label: "N°",           key: "num",       width: 4  },
+      { label: "Servicio",     key: "nombre",    width: 30 },
+      { label: "Categoría",    key: "categoria", width: 22 },
+      { label: "Precio (Bs.)", key: "precio",    width: 13 },
+    ];
+    const xlsxColumns = [
+      { label: "N°",           key: "num",       excelWidth: 5  },
+      { label: "Servicio",     key: "nombre",    excelWidth: 30 },
+      { label: "Categoría",    key: "categoria", excelWidth: 22 },
+      { label: "Precio (Bs.)", key: "precio",    excelWidth: 14 },
+    ];
+    const columns = format === "pdf" ? pdfColumns : xlsxColumns;
+
+    const rows = services.map((s, i) => ({
+      num:       i + 1,
+      nombre:    s.name     ?? "—",
+      categoria: s.category ?? "—",
+      precio:    formatBs(s.price),
+    }));
+
+    const summary = [
+      { label: "Total servicios", value: rows.length },
+    ];
+
+    const filters = buildFilterDesc([
+      search   && `Búsqueda: "${search}"`,
+      category && `Categoría: ${category}`,
+    ]);
+
+    const buffer = format === "pdf"
+      ? await buildPDF({ title: "Reporte de Servicios", filters, columns, rows, summary })
+      : await buildExcel({ title: "Reporte de Servicios", filters, columns, rows, summary });
+
+    sendFile(res, buffer, format, `servicios_${dayjs().format("YYYY-MM-DD")}`);
+  } catch (err) {
+    console.error("exportServices:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+//  EXPORT CATEGORÍAS
+// ═══════════════════════════════════════════════════════════════════════════════
+export const exportCategories = async (req, res) => {
+  try {
+    if (!req.user) return res.status(403).json({ message: "No autorizado" });
+    const isStaff = req.user.admin || req.user.branchManager;
+    if (!isStaff) return res.status(403).json({ message: "Solo administradores y supervisores" });
+
+    const format = getFormat(req);
+    const { search, active } = req.query;
+
+    const query = {};
+    if (search) query.name = { $regex: search, $options: "i" };
+    if (active === "true")  query.active = true;
+    else if (active === "false") query.active = false;
+
+    const categories = await Category.find(query).sort({ name: 1 }).lean();
+
+    const pdfColumns = [
+      { label: "N°",          key: "num",         width: 4  },
+      { label: "Nombre",      key: "nombre",      width: 22 },
+      { label: "Descripción", key: "descripcion", width: 37 },
+      { label: "Estado",      key: "estado",      width: 10 },
+    ];
+    const xlsxColumns = [
+      { label: "N°",             key: "num",         excelWidth: 5  },
+      { label: "Nombre",         key: "nombre",      excelWidth: 22 },
+      { label: "Descripción",    key: "descripcion", excelWidth: 38 },
+      { label: "Icono",          key: "icono",       excelWidth: 20 },
+      { label: "Estado",         key: "estado",      excelWidth: 12 },
+      { label: "Fecha creación", key: "registro",    excelWidth: 16 },
+    ];
+    const columns = format === "pdf" ? pdfColumns : xlsxColumns;
+
+    const rows = categories.map((c, i) => ({
+      num:         i + 1,
+      nombre:      c.name        ?? "—",
+      descripcion: c.description || "—",
+      icono:       c.icon        ?? "—",
+      estado:      c.active ? "Activa" : "Inactiva",
+      registro:    c.createdAt ? dayjs(c.createdAt).format("DD/MM/YYYY") : "—",
+    }));
+
+    const summary = [
+      { label: "Total activas",   value: rows.filter((r) => r.estado === "Activa").length   },
+      { label: "Total inactivas", value: rows.filter((r) => r.estado === "Inactiva").length },
+    ].filter((s) => s.value > 0);
+
+    const filters = buildFilterDesc([
+      search && `Búsqueda: "${search}"`,
+      active != null && active !== "" && `Estado: ${active === "true" ? "Activa" : "Inactiva"}`,
+    ]);
+
+    const buffer = format === "pdf"
+      ? await buildPDF({ title: "Reporte de Categorías", filters, columns, rows, summary })
+      : await buildExcel({ title: "Reporte de Categorías", filters, columns, rows, summary });
+
+    sendFile(res, buffer, format, `categorias_${dayjs().format("YYYY-MM-DD")}`);
+  } catch (err) {
+    console.error("exportCategories:", err);
     res.status(500).json({ message: err.message });
   }
 };

@@ -1,4 +1,5 @@
 import Services from "../models/Services.js";
+import Appointment from "../models/Appointment.js";
 import { handleNotFoundError, validateObjectId } from "../utils/index.js";
 import paginate from "../utils/pagination.js";
 
@@ -115,6 +116,17 @@ const deleteService = async (req, res) => {
   if (!service) {
     return handleNotFoundError("El registro no existe", res);
   }
+
+  const pendingCount = await Appointment.countDocuments({
+    services: id,
+    state: "Pendiente",
+  });
+  if (pendingCount > 0) {
+    return res.status(400).json({
+      msg: `No se puede eliminar el servicio porque tiene ${pendingCount} cita(s) pendiente(s) asociada(s).`,
+    });
+  }
+
   try {
     await service.deleteOne();
     res.json({ msg: "El servicio se eliminó correctamente" });

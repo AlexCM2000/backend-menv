@@ -23,6 +23,15 @@ const getDashboardStats = async (req, res) => {
       rangeStart = new Date(todayStart);
       rangeStart.setDate(todayStart.getDate() - 6);
       rangeEnd = todayEnd;
+    } else if (range === "custom") {
+      rangeStart = req.query.date_from
+        ? new Date(req.query.date_from)
+        : new Date(now.getFullYear(), now.getMonth(), 1);
+      rangeEnd = req.query.date_to
+        ? new Date(req.query.date_to)
+        : new Date(todayEnd);
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeEnd.setHours(23, 59, 59, 999);
     } else {
       rangeStart = new Date(now.getFullYear(), now.getMonth(), 1);
       rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -69,13 +78,20 @@ const getDashboardStats = async (req, res) => {
       { $group: { _id: "$state", count: { $sum: 1 } } },
     ]);
 
-    // Tendencia diaria (últimos N días)
-    const trendDays = range === "today" ? 1 : range === "week" ? 7 : 30;
-    const trendStart = new Date(todayStart);
-    trendStart.setDate(todayStart.getDate() - (trendDays - 1));
+    // Tendencia diaria
+    let trendStart, trendEnd;
+    if (range === "custom") {
+      trendStart = rangeStart;
+      trendEnd = rangeEnd;
+    } else {
+      const trendDays = range === "today" ? 1 : range === "week" ? 7 : 30;
+      trendStart = new Date(todayStart);
+      trendStart.setDate(todayStart.getDate() - (trendDays - 1));
+      trendEnd = todayEnd;
+    }
 
     const tendenciaPorDia = await Appointment.aggregate([
-      { $match: { ...apptFilter, date: { $gte: trendStart, $lte: todayEnd } } },
+      { $match: { ...apptFilter, date: { $gte: trendStart, $lte: trendEnd } } },
       {
         $group: {
           _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },

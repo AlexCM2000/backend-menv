@@ -33,6 +33,8 @@ export const getHealthRecords = async (req, res) => {
     const search = req.query.search;
     const state = req.query.state;
     const showArchived = req.query.archived === "true";
+    const date_from = req.query.date_from;
+    const date_to = req.query.date_to;
 
     // Por defecto solo muestra no archivados, salvo que se pida explícitamente
     const filter = showArchived ? { archivedAt: { $ne: null } } : { archivedAt: null };
@@ -41,7 +43,23 @@ export const getHealthRecords = async (req, res) => {
       filter.state = state;
     }
 
+    if (date_from || date_to) {
+      filter.createdAt = {};
+      if (date_from) filter.createdAt.$gte = new Date(date_from);
+      if (date_to) {
+        const end = new Date(date_to);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    // Excluir el historial del usuario autenticado (admin/staff no debe aparecer en los módulos)
+    const ownPatient = await Patient.findOne({ user: req.user._id, eliminado_en: null }).select("_id");
+
     let patientFilter = { eliminado_en: null };
+    // Si el admin tiene un registro de paciente, excluirlo del lookup
+    if (ownPatient) patientFilter._id = { $ne: ownPatient._id };
+
     let needsPatientLookup = false;
 
     // Filtro de centro de salud según rol
@@ -77,6 +95,9 @@ export const getHealthRecords = async (req, res) => {
         return res.json({ count: 0, page, page_size: pageSize, results: [] });
       }
       filter.patient = { $in: patientIds };
+    } else if (ownPatient) {
+      // Sin lookup (admin sin filtros): excluir directamente del filtro principal
+      filter.patient = { $nin: [ownPatient._id] };
     }
 
     const paginated = await paginate(HealthRecord, page, pageSize, filter, [

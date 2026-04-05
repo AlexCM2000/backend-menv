@@ -1,5 +1,6 @@
 import Category from "../models/Category.js";
 import Services from "../models/Services.js";
+import Appointment from "../models/Appointment.js";
 import { validateObjectId, handleNotFoundError } from "../utils/index.js";
 
 const getCategories = async (req, res) => {
@@ -108,7 +109,22 @@ const deleteCategory = async (req, res) => {
   const category = await Category.findById(id);
   if (!category) return handleNotFoundError("La categoría no existe", res);
 
-  const servicesCount = await Services.countDocuments({ category: category.name });
+  const categoryServices = await Services.find({ category: category.name }, "_id");
+  const serviceIds = categoryServices.map((s) => s._id);
+
+  if (serviceIds.length > 0) {
+    const pendingCount = await Appointment.countDocuments({
+      services: { $in: serviceIds },
+      state: "Pendiente",
+    });
+    if (pendingCount > 0) {
+      return res.status(400).json({
+        msg: `No se puede eliminar la categoría porque tiene ${pendingCount} cita(s) pendiente(s) asociada(s) a sus servicios.`,
+      });
+    }
+  }
+
+  const servicesCount = serviceIds.length;
   if (servicesCount > 0) {
     return res.status(400).json({
       msg: `No se puede eliminar la categoría porque tiene ${servicesCount} servicio(s) asociado(s). Reasigna o elimina los servicios primero.`

@@ -200,8 +200,8 @@ const updateAppointment = async (req, res) => {
         return handleNotFoundError("La cita no existe", res);
     }
 
-    // Validar permisos: admin y branchManager pueden actualizar cualquier cita
-    const isStaff = req.user.admin || req.user.branchManager;
+    // Validar permisos: admin, branchManager y doctor pueden actualizar cualquier cita
+    const isStaff = req.user.admin || req.user.branchManager || req.user.doctor;
     if (!isStaff && appointment.user._id.toString() !== req.user._id.toString()) {
         return res.status(403).json({ msg: "No tienes los permisos para modificar esta cita" });
     }
