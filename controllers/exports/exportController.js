@@ -48,13 +48,38 @@ const sendFile = (res, buffer, format, filename) => {
 /** Lookup health center by ObjectId or code, return { id, name } or null */
 const resolveHealth = async (value) => {
   if (!value) return null;
-  const q = isMongoObjectId(value) ? { _id: value } : { codigo: value };
+  const q = isMongoObjectId(value) ? { _id: value } : { codigo: Number(value) };
   return Health.findOne(q).select("_id name");
 };
 
 /** Build filter description string */
 const buildFilterDesc = (parts) =>
   parts.filter(Boolean).join("  |  ") || "Sin filtros";
+
+// Busca en User Y Patient para no perder citas de pacientes sin cuenta de usuario.
+// Retorna true si no hay resultados (para emitir respuesta vacía).
+const applyExportSearchFilter = async (query, searchName) => {
+  const nameRegex = { $regex: searchName, $options: "i" };
+  const nameCondition = [
+    { primerApellido: nameRegex },
+    { segundoApellido: nameRegex },
+    { nombres: nameRegex },
+    { email: nameRegex },
+  ];
+  const [users, patients] = await Promise.all([
+    User.find({ $or: nameCondition }).select("_id"),
+    Patient.find({ $or: nameCondition, eliminado_en: null }).select("_id"),
+  ]);
+  const userIds = users.map(u => u._id);
+  const patientIds = patients.map(p => p._id);
+  if (!userIds.length && !patientIds.length) return true; // vacío
+
+  const conditions = [];
+  if (userIds.length) conditions.push({ user: { $in: userIds } });
+  if (patientIds.length) conditions.push({ patient: { $in: patientIds } });
+  query.$or = conditions;
+  return false;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  EXPORT CITAS MÉDICAS
@@ -79,32 +104,14 @@ export const exportAppointments = async (req, res) => {
         healthName = hc.name;
       }
       if (search) {
-        const users = await User.find({
-          $or: [
-            { primerApellido: { $regex: search, $options: "i" } },
-            { segundoApellido: { $regex: search, $options: "i" } },
-            { nombres:  { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-          ],
-        }).select("_id");
-        const ids = users.map((u) => u._id);
-        if (!ids.length) return sendFile(res, await buildEmptyExcel("Citas médicas", format), format, "citas_medicas");
-        query.user = { $in: ids };
+        const empty = await applyExportSearchFilter(query, search);
+        if (empty) return sendFile(res, await buildEmptyExcel("Citas médicas", format), format, "citas_medicas");
       }
     } else if (req.user.branchManager) {
       query.health = req.user.health;
       if (search) {
-        const users = await User.find({
-          $or: [
-            { primerApellido: { $regex: search, $options: "i" } },
-            { segundoApellido: { $regex: search, $options: "i" } },
-            { nombres:  { $regex: search, $options: "i" } },
-            { email: { $regex: search, $options: "i" } },
-          ],
-        }).select("_id");
-        const ids = users.map((u) => u._id);
-        if (!ids.length) return sendFile(res, await buildEmptyExcel("Citas médicas", format), format, "citas_medicas");
-        query.user = { $in: ids };
+        const empty = await applyExportSearchFilter(query, search);
+        if (empty) return sendFile(res, await buildEmptyExcel("Citas médicas", format), format, "citas_medicas");
       }
     } else {
       query = { user: req.user._id, date: { $gte: new Date() } };
@@ -130,6 +137,7 @@ export const exportAppointments = async (req, res) => {
       .populate("services", "name category")
       .populate("health", "name")
       .populate("user", "primerApellido segundoApellido nombres email")
+      .populate("patient", "primerApellido segundoApellido nombres")
       .populate("doctor", "name specialty")
       .sort({ date: -1 })
       .lean();
@@ -145,7 +153,6 @@ export const exportAppointments = async (req, res) => {
       { label: "Médico",        key: "medico",   width: 18 },
       { label: "Centro médico", key: "centro",   width: 16 },
       { label: "Estado",        key: "estado",   width: 13 },
-      { label: "Total (Bs.)",   key: "total",    width: 10 },
     ];
     const xlsxColumns = [
       { label: "N°",            key: "num",       excelWidth: 5  },
@@ -163,11 +170,8 @@ export const exportAppointments = async (req, res) => {
       { label: "Especialidad",  key: "especialidad", excelWidth: 20 },
       { label: "Centro médico", key: "centro",    excelWidth: 22 },
       { label: "Estado",        key: "estado",    excelWidth: 14 },
-      { label: "Total (Bs.)",   key: "total",     excelWidth: 12 },
     ];
     const columns = format === "pdf" ? pdfColumns : xlsxColumns;
-
-    const totalRevenue = appointments.reduce((s, a) => s + (a.totalAmount || 0), 0);
 
     const rows = appointments.map((a, i) => ({
       num:          i + 1,
@@ -175,13 +179,16 @@ export const exportAppointments = async (req, res) => {
       categoria:    a.services?.[0]?.category ?? "—",
       fecha:        a.date ? dayjs(a.date).format("DD/MM/YYYY") : "—",
       hora:         a.time ?? "—",
-      paciente:     [a.user?.primerApellido, a.user?.segundoApellido, a.user?.nombres].filter(Boolean).join(" ") || "—",
+      paciente:     [
+                      (a.user || a.patient)?.primerApellido,
+                      (a.user || a.patient)?.segundoApellido,
+                      (a.user || a.patient)?.nombres,
+                    ].filter(Boolean).join(" ") || "—",
       email:        a.user?.email ?? "—",
       medico:       a.doctor?.name ?? "Sin asignar",
       especialidad: a.doctor?.specialty ?? "—",
       centro:       a.health?.name ?? "—",
       estado:       a.state ?? "—",
-      total:        formatBs(a.totalAmount),
     }));
 
     // ── Resumen ─────────────────────────────────────────────────────────────
@@ -191,7 +198,6 @@ export const exportAppointments = async (req, res) => {
       const count = rows.filter((r) => r.estado === s).length;
       return count > 0 ? [{ label: s, value: count }] : [];
     });
-    summary.push({ label: "Total recaudado", value: formatBs(totalRevenue) });
 
     // ── Filtros aplicados ───────────────────────────────────────────────────
     const filters = buildFilterDesc([
@@ -239,6 +245,21 @@ export const exportPatients = async (req, res) => {
       query.healthCenter = req.user.health;
     } else {
       return res.status(403).json({ message: "No autorizado" });
+    }
+
+    // Excluir pacientes vinculados a usuarios staff por user ID, email o susCode
+    const staffExportUsers = await User.find({
+      $or: [{ admin: true }, { doctor: true }, { branchManager: true }],
+    }).select("_id email susCode").lean();
+    const _eec = [];
+    if (staffExportUsers.length) _eec.push({ user:    { $in: staffExportUsers.map(u => u._id) } });
+    const _eEmails = staffExportUsers.map(u => u.email).filter(Boolean);
+    const _eSus    = staffExportUsers.map(u => u.susCode).filter(Boolean);
+    if (_eEmails.length) _eec.push({ email:   { $in: _eEmails } });
+    if (_eSus.length)    _eec.push({ susCode: { $in: _eSus } });
+    if (_eec.length) {
+      const _ep = await Patient.find({ $or: _eec, eliminado_en: null }).select("_id").lean();
+      if (_ep.length) query._id = { $nin: _ep.map(p => p._id) };
     }
 
     if (gender && ["Masculino", "Femenino"].includes(gender)) query.gender = gender;
@@ -380,6 +401,24 @@ export const exportHealthRecords = async (req, res) => {
         { susCode:   { $regex: search, $options: "i" } },
       ];
       needsLookup = true;
+    }
+
+    // Excluir historiales de pacientes staff por user ID, email o susCode
+    const staffHrUsers = await User.find({
+      $or: [{ admin: true }, { doctor: true }, { branchManager: true }],
+    }).select("_id email susCode").lean();
+    const _hec = [];
+    if (staffHrUsers.length) _hec.push({ user: { $in: staffHrUsers.map(u => u._id) } });
+    const _hEmails = staffHrUsers.map(u => u.email).filter(Boolean);
+    const _hSus    = staffHrUsers.map(u => u.susCode).filter(Boolean);
+    if (_hEmails.length) _hec.push({ email:   { $in: _hEmails } });
+    if (_hSus.length)    _hec.push({ susCode: { $in: _hSus } });
+    if (_hec.length) {
+      const staffHrPatients = await Patient.find({ $or: _hec, eliminado_en: null }).select("_id").lean();
+      if (staffHrPatients.length) {
+        patientFilter._id = { $nin: staffHrPatients.map(p => p._id) };
+        needsLookup = true;
+      }
     }
 
     if (needsLookup) {
@@ -604,16 +643,14 @@ export const exportServices = async (req, res) => {
     const services = await Services.find(query).sort({ category: 1, name: 1 }).lean();
 
     const pdfColumns = [
-      { label: "N°",           key: "num",       width: 4  },
-      { label: "Servicio",     key: "nombre",    width: 30 },
-      { label: "Categoría",    key: "categoria", width: 22 },
-      { label: "Precio (Bs.)", key: "precio",    width: 13 },
+      { label: "N°",        key: "num",       width: 4  },
+      { label: "Servicio",  key: "nombre",    width: 36 },
+      { label: "Categoría", key: "categoria", width: 26 },
     ];
     const xlsxColumns = [
-      { label: "N°",           key: "num",       excelWidth: 5  },
-      { label: "Servicio",     key: "nombre",    excelWidth: 30 },
-      { label: "Categoría",    key: "categoria", excelWidth: 22 },
-      { label: "Precio (Bs.)", key: "precio",    excelWidth: 14 },
+      { label: "N°",        key: "num",       excelWidth: 5  },
+      { label: "Servicio",  key: "nombre",    excelWidth: 34 },
+      { label: "Categoría", key: "categoria", excelWidth: 26 },
     ];
     const columns = format === "pdf" ? pdfColumns : xlsxColumns;
 
@@ -621,7 +658,6 @@ export const exportServices = async (req, res) => {
       num:       i + 1,
       nombre:    s.name     ?? "—",
       categoria: s.category ?? "—",
-      precio:    formatBs(s.price),
     }));
 
     const summary = [
@@ -725,6 +761,8 @@ export const exportUsers = async (req, res) => {
     let healthName = null;
 
     if (req.user.admin) {
+      // El admin que exporta no aparece en su propio reporte
+      query._id = { $ne: req.user._id };
       if (req.query.health) {
         const hc = await resolveHealth(req.query.health);
         if (!hc) return res.status(404).json({ message: "Centro de salud no encontrado." });
@@ -733,6 +771,8 @@ export const exportUsers = async (req, res) => {
       }
     } else {
       query.health = req.user.health;
+      // BranchManager no puede ver administradores
+      query.admin = { $ne: true };
     }
 
     if (search) {
@@ -747,7 +787,8 @@ export const exportUsers = async (req, res) => {
 
     if (role === "admin")         { query.admin = true; }
     else if (role === "branchManager") { query.branchManager = true; query.admin = { $ne: true }; }
-    else if (role === "user")     { query.admin = { $ne: true }; query.branchManager = { $ne: true }; }
+    else if (role === "doctor")   { query.doctor = true; query.admin = { $ne: true }; query.branchManager = { $ne: true }; }
+    else if (role === "user")     { query.admin = { $ne: true }; query.branchManager = { $ne: true }; query.doctor = { $ne: true }; }
 
     if (verified === "true")  query.verified = true;
     else if (verified === "false") query.verified = false;
@@ -761,6 +802,7 @@ export const exportUsers = async (req, res) => {
     const getRol = (u) => {
       if (u.admin) return "Administrador";
       if (u.branchManager) return "Supervisor";
+      if (u.doctor) return "Médico";
       return "Usuario";
     };
 
@@ -789,6 +831,7 @@ export const exportUsers = async (req, res) => {
     const summary = [
       { label: "Administradores",    value: rows.filter((r) => r.rol === "Administrador").length },
       { label: "Supervisores",       value: rows.filter((r) => r.rol === "Supervisor").length    },
+      { label: "Médicos",            value: rows.filter((r) => r.rol === "Médico").length        },
       { label: "Usuarios",           value: rows.filter((r) => r.rol === "Usuario").length       },
       { label: "Verificados",        value: rows.filter((r) => r.verificado === "Sí").length     },
       { label: "No verificados",     value: rows.filter((r) => r.verificado === "No").length     },
@@ -798,7 +841,7 @@ export const exportUsers = async (req, res) => {
       verified === "true" ? "Verificado: Sí" :
       verified === "false" ? "Verificado: No" : null;
 
-    const roleLabels = { admin: "Administrador", branchManager: "Supervisor", user: "Usuario" };
+    const roleLabels = { admin: "Administrador", branchManager: "Supervisor", doctor: "Médico", user: "Usuario" };
 
     const filters = buildFilterDesc([
       search        && `Búsqueda: "${search}"`,

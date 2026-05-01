@@ -3,6 +3,8 @@ import Patient from "../models/Patient.js";
 import Health from "../models/HealthCenter.js";
 import Appointment from "../models/Appointment.js";
 import User from "../models/User.js";
+import AuditLog from "../models/AuditLog.js";
+import { crearAuditLog } from "../utils/auditHelper.js";
 import mongoose from "mongoose";
 import paginate from "../utils/pagination.js";
 import dayjs from "dayjs";
@@ -53,12 +55,25 @@ export const getHealthRecords = async (req, res) => {
       }
     }
 
-    // Excluir el historial del usuario autenticado (admin/staff no debe aparecer en los módulos)
-    const ownPatient = await Patient.findOne({ user: req.user._id, eliminado_en: null }).select("_id");
+    // Excluir historiales vinculados a usuarios staff por user ID, email o susCode
+    const staffUsers = await User.find({
+      $or: [{ admin: true }, { doctor: true }, { branchManager: true }],
+    }).select("_id email susCode").lean();
+
+    const _excludeConds = [];
+    const _sIds    = staffUsers.map(u => u._id);
+    const _sEmails = staffUsers.map(u => u.email).filter(Boolean);
+    const _sSus    = staffUsers.map(u => u.susCode).filter(Boolean);
+    if (_sIds.length)    _excludeConds.push({ user:    { $in: _sIds } });
+    if (_sEmails.length) _excludeConds.push({ email:   { $in: _sEmails } });
+    if (_sSus.length)    _excludeConds.push({ susCode: { $in: _sSus } });
+
+    const staffPatientIds = _excludeConds.length
+      ? (await Patient.find({ $or: _excludeConds, eliminado_en: null }).select("_id").lean()).map(p => p._id)
+      : [];
 
     let patientFilter = { eliminado_en: null };
-    // Si el admin tiene un registro de paciente, excluirlo del lookup
-    if (ownPatient) patientFilter._id = { $ne: ownPatient._id };
+    if (staffPatientIds.length) patientFilter._id = { $nin: staffPatientIds };
 
     let needsPatientLookup = false;
 
@@ -67,7 +82,7 @@ export const getHealthRecords = async (req, res) => {
       if (req.query.health) {
         const hcQuery = isMongoObjectId(req.query.health)
           ? { _id: req.query.health }
-          : { codigo: req.query.health };
+          : { codigo: Number(req.query.health) };
         const hc = await Health.findOne(hcQuery);
         if (!hc) return res.status(404).json({ message: "Centro de salud no encontrado." });
         patientFilter.healthCenter = hc._id;
@@ -95,13 +110,17 @@ export const getHealthRecords = async (req, res) => {
         return res.json({ count: 0, page, page_size: pageSize, results: [] });
       }
       filter.patient = { $in: patientIds };
-    } else if (ownPatient) {
-      // Sin lookup (admin sin filtros): excluir directamente del filtro principal
-      filter.patient = { $nin: [ownPatient._id] };
+    } else if (staffPatientIds.length) {
+      // Sin lookup (admin sin filtros): excluir pacientes staff directamente
+      filter.patient = { $nin: staffPatientIds };
     }
 
     const paginated = await paginate(HealthRecord, page, pageSize, filter, [
-      { path: "patient", select: "primerApellido segundoApellido nombres susCode healthCenter" },
+      {
+        path: "patient",
+        select: "primerApellido segundoApellido nombres susCode healthCenter",
+        populate: { path: "healthCenter", select: "name codigo" },
+      },
       { path: "medicalAppointments", select: "date state" },
     ]);
 
@@ -161,11 +180,13 @@ export const createHealthRecord = async (req, res) => {
 
     const record = new HealthRecord({ patient: patientId });
 
-    if (patient.user) {
-      const appts = await Appointment.find({ user: patient.user._id }).select("_id");
-      if (appts.length) {
-        record.medicalAppointments = appts.map((a) => a._id);
-      }
+    // Vincular citas existentes: por user (si tiene cuenta) y por patient (citas sin cuenta)
+    const apptConditions = [];
+    if (patient.user) apptConditions.push({ user: patient.user._id });
+    apptConditions.push({ patient: patient._id });
+    const appts = await Appointment.find({ $or: apptConditions }).select("_id");
+    if (appts.length) {
+      record.medicalAppointments = appts.map((a) => a._id);
     }
 
     const userId = req.user._id;
@@ -248,18 +269,21 @@ export const getHealthRecordByAppointment = async (req, res) => {
       return res.status(400).json({ message: "ID de cita no válido." });
     }
 
-    const appointment = await Appointment.findById(appointmentId).select("user");
+    const appointment = await Appointment.findById(appointmentId).select("user patient");
     if (!appointment) return res.status(404).json({ message: "Cita no encontrada." });
 
-    const apptUser = await User.findById(appointment.user).select("susCode");
-    if (!apptUser?.susCode) {
-      return res.status(404).json({ message: "Usuario sin código SUS." });
-    }
+    let patient = null;
 
-    const patient = await Patient.findOne({
-      susCode: apptUser.susCode,
-      eliminado_en: null,
-    }).select("medicalHistory");
+    if (appointment.patient) {
+      // Cita creada para paciente sin cuenta: referencia directa
+      patient = await Patient.findById(appointment.patient).select("medicalHistory");
+    } else if (appointment.user) {
+      // Cita creada por usuario con cuenta: buscar paciente por susCode
+      const apptUser = await User.findById(appointment.user).select("susCode");
+      if (apptUser?.susCode) {
+        patient = await Patient.findOne({ susCode: apptUser.susCode, eliminado_en: null }).select("medicalHistory");
+      }
+    }
 
     if (!patient?.medicalHistory) {
       return res.status(404).json({ message: "El paciente no tiene historial médico registrado." });
@@ -350,8 +374,24 @@ export const updateRecordState = async (req, res) => {
       return res.status(400).json({ message: "No se puede cambiar estado de un historial archivado." });
     }
 
+    const previousState = record.state;
     record.state = state;
     await record.save();
+
+    crearAuditLog({
+      action:      "health_record_state_change",
+      performedBy: req.user,
+      targetId:    record._id,
+      description: `Cambio de estado del historial: "${previousState}" → "${state}"`,
+      details: {
+        "Estado anterior": previousState,
+        "Estado nuevo":    state,
+        "ID historial":    record._id.toString(),
+        "ID paciente":     record.patient?.toString() ?? "—",
+      },
+      ip: req.ip,
+    });
+
     return res.json({ message: "Estado actualizado.", state: record.state });
   } catch (error) {
     console.error(error);

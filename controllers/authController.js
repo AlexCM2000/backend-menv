@@ -4,6 +4,8 @@ import User from "../models/User.js";
 import HealthCenter from "../models/HealthCenter.js";
 import Patient from "../models/Patient.js";
 import HealthRecord from "../models/HealthRecord.js";
+import AuditLog from "../models/AuditLog.js";
+import { crearAuditLog } from "../utils/auditHelper.js";
 import {
   sendEmailPasswordReset,
   sendEmailVerification,
@@ -69,28 +71,47 @@ const register = async (req, res) => {
       name: fullName,
       email: saved.email,
       token: saved.token,
+    }).catch(async (emailErr) => {
+      console.error("Error al enviar email de verificación:", emailErr);
+      // Si el email falla (ej: SMTP caído), auto-verificar para que el usuario pueda ingresar
+      try {
+        saved.verified = true;
+        saved.token = "";
+        await saved.save();
+        console.warn("Usuario auto-verificado por fallo de email:", saved.email);
+      } catch (saveErr) {
+        console.error("Error al auto-verificar usuario:", saveErr);
+      }
     });
 
-    // Auto-crear ficha de paciente + historial clínico (no bloqueante)
+    // Auto-crear o vincular ficha de paciente + historial clínico (no bloqueante)
     try {
-      const patient = new Patient({
-        primerApellido,
-        segundoApellido: segundoApellido || "",
-        nombres,
-        email: correo,
-        susCode,
-        healthCenter: health._id,
-        user: saved._id,
-      });
-      const savedPatient = await patient.save();
+      const existingPatient = await Patient.findOne({ susCode, eliminado_en: null });
+      if (existingPatient) {
+        // Ya existe una ficha manual: solo vincular el usuario
+        existingPatient.user = saved._id;
+        await existingPatient.save();
+      } else {
+        // No existe ficha: crear paciente + historial
+        const patient = new Patient({
+          primerApellido,
+          segundoApellido: segundoApellido || "",
+          nombres,
+          email: correo,
+          susCode,
+          healthCenter: health._id,
+          user: saved._id,
+        });
+        const savedPatient = await patient.save();
 
-      const healthRecord = new HealthRecord({ patient: savedPatient._id });
-      const savedRecord = await healthRecord.save();
+        const healthRecord = new HealthRecord({ patient: savedPatient._id });
+        const savedRecord = await healthRecord.save();
 
-      savedPatient.medicalHistory = savedRecord._id;
-      await savedPatient.save();
+        savedPatient.medicalHistory = savedRecord._id;
+        await savedPatient.save();
+      }
     } catch (autoErr) {
-      console.error("Error al crear historial automático (no bloqueante):", autoErr);
+      console.error("Error al crear/vincular historial automático:", autoErr);
     }
 
     return res.json({
@@ -143,6 +164,7 @@ const forgotPassword = async (req, res) => {
   }
   try {
     user.token = uniqueId();
+    user.passwordResetExpires = new Date(Date.now() + 2 * 60 * 60 * 1000); // 2 horas
     await user.save();
     const fullName = [user.primerApellido, user.segundoApellido, user.nombres].filter(Boolean).join(" ");
     await sendEmailPasswordReset({
@@ -163,6 +185,12 @@ const verifyPasswordResetToken = async (req, res) => {
   if (!user) {
     return res.status(401).json({ msg: "Token no válido" });
   }
+  if (user.passwordResetExpires && user.passwordResetExpires < new Date()) {
+    user.token = "";
+    user.passwordResetExpires = null;
+    await user.save();
+    return res.status(401).json({ msg: "El enlace de recuperación ha expirado. Solicita uno nuevo." });
+  }
   return res.json({ msg: "Token válido y el usuario existe" });
 };
 
@@ -173,10 +201,26 @@ const updatePassword = async (req, res) => {
   if (!user) {
     return res.status(401).json({ msg: "Token no válido" });
   }
+  if (user.passwordResetExpires && user.passwordResetExpires < new Date()) {
+    user.token = "";
+    user.passwordResetExpires = null;
+    await user.save();
+    return res.status(401).json({ msg: "El enlace de recuperación ha expirado. Solicita uno nuevo." });
+  }
   try {
     user.password = password;
     user.token = "";
+    user.passwordResetExpires = null;
     await user.save();
+
+    crearAuditLog({
+      action:      "password_reset",
+      performedBy: user,
+      targetUser:  user,
+      description: `Contraseña restablecida vía enlace de recuperación para ${user.email}`,
+      ip:          null,
+    });
+
     return res.json({ msg: "Contraseña actualizada correctamente" });
   } catch (err) {
     console.error(err);
@@ -216,6 +260,73 @@ const userAccount = async (req, res) => {
   }
 };
 
+const updateProfile = async (req, res) => {
+  const { primerApellido, segundoApellido, nombres, email } = req.body;
+
+  if (!primerApellido || !nombres || !email) {
+    return res.status(400).json({ msg: "Primer apellido, nombres y email son obligatorios" });
+  }
+
+  try {
+    const authUser = req.user;
+
+    // Verificar que el email no esté en uso por otro usuario
+    if (email !== authUser.email) {
+      const existing = await User.findOne({ email, _id: { $ne: authUser._id } });
+      if (existing) {
+        return res.status(400).json({ msg: "El email ya está en uso por otro usuario" });
+      }
+    }
+
+    authUser.primerApellido = primerApellido.trim();
+    authUser.segundoApellido = segundoApellido?.trim() ?? "";
+    authUser.nombres = nombres.trim();
+    authUser.email = email.trim().toLowerCase();
+    await authUser.save();
+
+    return res.json({ msg: "Perfil actualizado correctamente", user: authUser });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ msg: "Error al actualizar el perfil" });
+  }
+};
+
+const changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ msg: "Todos los campos son obligatorios" });
+  }
+  if (newPassword.trim().length < 8) {
+    return res.status(400).json({ msg: "La nueva contraseña debe tener al menos 8 caracteres" });
+  }
+
+  try {
+    // Re-fetch con contraseña para poder verificarla (req.user excluye password)
+    const authUser = await User.findById(req.user._id);
+    const isMatch = await authUser.checkPassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ msg: "La contraseña actual es incorrecta" });
+    }
+
+    authUser.password = newPassword;
+    await authUser.save();
+
+    crearAuditLog({
+      action:      "password_reset",
+      performedBy: req.user,
+      targetUser:  req.user,
+      description: `Contraseña cambiada desde el perfil por ${req.user.email}`,
+      ip:          req.ip,
+    });
+
+    return res.json({ msg: "Contraseña actualizada correctamente" });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ msg: "Error al cambiar la contraseña" });
+  }
+};
+
 export {
   register,
   verifyAccount,
@@ -226,4 +337,6 @@ export {
   user,
   admin,
   userAccount,
+  updateProfile,
+  changePassword,
 };

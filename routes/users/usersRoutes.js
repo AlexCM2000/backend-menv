@@ -10,15 +10,16 @@
 import express from "express";
 import {
   getUsers,
-  getUserById, // <-- nuevo controlador para GET por id
+  getUserById,
   updateUser,
+  createUser,
 } from "../../controllers/Users/usersController.js";
 import authMiddleware from "../../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// GET paginado (ej: /api/usersList?page=1&page_size=10&search=Juan&health=xxx)
-router.route("/").get(authMiddleware, getUsers);
+// GET paginado | POST crear usuario
+router.route("/").get(authMiddleware, getUsers).post(authMiddleware, createUser);
 
 // GET por id, PUT y PATCH para actualizar
 router

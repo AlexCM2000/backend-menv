@@ -2,11 +2,13 @@ import Patient from "../../models/Patient.js";
 import Health from "../../models/HealthCenter.js";
 import Sus from "../../models/Sus.js";
 import User from "../../models/User.js";
+import HealthRecord from "../../models/HealthRecord.js";
+import AuditLog from "../../models/AuditLog.js";
+import { crearAuditLog } from "../../utils/auditHelper.js";
 import dayjs from "dayjs";
 import Appointment from "../../models/Appointment.js";
 import paginate from "../../utils/pagination.js";
 import mongoose from "mongoose";
-import { populate } from "dotenv";
 
 const isMongoObjectId = (value) =>
   typeof value === "string" && /^[a-fA-F0-9]{24}$/.test(value);
@@ -22,14 +24,34 @@ const getPatients = async (req, res) => {
       return res.status(403).json({ message: "No autorizado" });
     }
 
-    const query = { eliminado_en: null, user: { $ne: req.user._id } };
+    // Excluir pacientes vinculados a usuarios staff por user ID, email o susCode
+    const staffUsers = await User.find({
+      $or: [{ admin: true }, { doctor: true }, { branchManager: true }],
+    }).select("_id email susCode").lean();
+
+    const excludeConditions = [];
+    const _sIds  = staffUsers.map(u => u._id);
+    const _sEmails  = staffUsers.map(u => u.email).filter(Boolean);
+    const _sSus  = staffUsers.map(u => u.susCode).filter(Boolean);
+    if (_sIds.length)    excludeConditions.push({ user:    { $in: _sIds } });
+    if (_sEmails.length) excludeConditions.push({ email:   { $in: _sEmails } });
+    if (_sSus.length)    excludeConditions.push({ susCode: { $in: _sSus } });
+
+    let _excludedPatientIds = [];
+    if (excludeConditions.length) {
+      const sp = await Patient.find({ $or: excludeConditions, eliminado_en: null }).select("_id").lean();
+      _excludedPatientIds = sp.map(p => p._id);
+    }
+
+    const query = { eliminado_en: null };
+    if (_excludedPatientIds.length) query._id = { $nin: _excludedPatientIds };
 
     // Filtro por centro de salud según rol
     if (req.user.admin) {
       if (req.query.health) {
         const hcQuery = isMongoObjectId(req.query.health)
           ? { _id: req.query.health }
-          : { codigo: req.query.health };
+          : { codigo: Number(req.query.health) };
         const hc = await Health.findOne(hcQuery);
         if (!hc)
           return res
@@ -37,11 +59,11 @@ const getPatients = async (req, res) => {
             .json({ message: "Centro de salud no encontrado." });
         query.healthCenter = hc._id;
       }
-    } else if (req.user.branchManager) {
+    } else if (req.user.branchManager || req.user.doctor) {
       if (!req.user.health)
         return res
           .status(400)
-          .json({ message: "Branch manager sin centro asignado." });
+          .json({ message: "Usuario sin centro de salud asignado." });
       query.healthCenter = req.user.health;
     }
 
@@ -50,15 +72,24 @@ const getPatients = async (req, res) => {
       query.gender = gender;
     }
 
-    // Búsqueda por texto (apellidos, nombres, email, código SUS)
+    // Búsqueda flexible por texto (apellidos, nombres, email, código SUS)
+    // Soporta búsquedas multi-palabra: "alex churata" encuentra "Alex Churata Mamaniy"
     if (search) {
-      query.$or = [
-        { primerApellido: { $regex: search, $options: "i" } },
-        { segundoApellido: { $regex: search, $options: "i" } },
-        { nombres: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { susCode: { $regex: search, $options: "i" } },
-      ];
+      const tokens = search.trim().split(/\s+/).filter(Boolean);
+      const buildTokenCondition = (token) => ({
+        $or: [
+          { primerApellido: { $regex: token, $options: "i" } },
+          { segundoApellido: { $regex: token, $options: "i" } },
+          { nombres: { $regex: token, $options: "i" } },
+          { email: { $regex: token, $options: "i" } },
+          { susCode: { $regex: token, $options: "i" } },
+        ],
+      });
+      if (tokens.length === 1) {
+        query.$or = buildTokenCondition(tokens[0]).$or;
+      } else {
+        query.$and = tokens.map(buildTokenCondition);
+      }
     }
 
     const paginatedPatients = await paginate(
@@ -100,12 +131,13 @@ const createPatient = async (req, res) => {
     } = req.body;
 
     // 1) Campos obligatorios
+    const isBranchManagerOnly = !req.user.admin && req.user.branchManager;
     if (
       !primerApellido ||
       !nombres ||
       !dateOfBirth ||
       !gender ||
-      !healthCenter ||
+      (!isBranchManagerOnly && !healthCenter) ||
       !susCode
     ) {
       return res.status(400).json({
@@ -113,8 +145,28 @@ const createPatient = async (req, res) => {
       });
     }
 
+    // 1b) Fecha de nacimiento no puede ser futura
+    const dob = new Date(dateOfBirth);
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    if (dob > todayMidnight) {
+      return res.status(400).json({ message: "La fecha de nacimiento no puede ser una fecha futura." });
+    }
+
     // 2) Verificar centro de salud
-    const existingHealthCenter = await Health.findOne({ codigo: healthCenter });
+    // Para branchManager (con o sin admin): usar su centro asignado desde el token (ignora el body)
+    let existingHealthCenter;
+    if (req.user.branchManager && req.user.health) {
+      existingHealthCenter = await Health.findById(req.user.health);
+    } else if (isBranchManagerOnly) {
+      return res.status(400).json({ message: "No tienes un centro de salud asignado." });
+    } else {
+      const codigoNum = Number(healthCenter);
+      if (isNaN(codigoNum)) {
+        return res.status(400).json({ message: "Código de centro de salud inválido." });
+      }
+      existingHealthCenter = await Health.findOne({ codigo: codigoNum });
+    }
     if (!existingHealthCenter) {
       return res
         .status(404)
@@ -176,6 +228,17 @@ const createPatient = async (req, res) => {
     });
 
     const savedPatient = await newPatient.save();
+
+    // Auto-crear historial clínico (no bloqueante)
+    try {
+      const healthRecord = new HealthRecord({ patient: savedPatient._id });
+      const savedRecord = await healthRecord.save();
+      savedPatient.medicalHistory = savedRecord._id;
+      await savedPatient.save();
+    } catch (hrErr) {
+      console.error("Error al crear historial automático:", hrErr);
+    }
+
     return res
       .status(201)
       .json({ message: "Paciente creado con éxito", patient: savedPatient });
@@ -215,8 +278,20 @@ const updatePatient = async (req, res) => {
       return res.status(404).json({ message: "Paciente no encontrado" });
     }
 
+    // 3b) Fecha de nacimiento no puede ser futura
+    if (dateOfBirth) {
+      const dob = new Date(dateOfBirth);
+      const todayMidnight = new Date();
+      todayMidnight.setHours(0, 0, 0, 0);
+      if (dob > todayMidnight) {
+        return res.status(400).json({ message: "La fecha de nacimiento no puede ser una fecha futura." });
+      }
+    }
+
     // 4) Si enviaron un nuevo healthCenter, validarlo y asignarlo
-    if (healthCenter) {
+    // Para branchManager: ignorar el valor del body, mantener el centro actual
+    const isBranchManagerOnlyUpd = !req.user.admin && req.user.branchManager;
+    if (!isBranchManagerOnlyUpd && healthCenter) {
       // Busca el centro por su campo 'codigo'
       const hcDoc = await Health.findOne({ codigo: healthCenter });
       if (!hcDoc) {
@@ -295,8 +370,8 @@ const deletePatient = async (req, res) => {
       return res.status(400).json({ message: "ID de paciente no válido" });
     }
 
-    // Buscar el paciente
-    const patient = await Patient.findById(id);
+    // Buscar el paciente con centro de salud populado para el log
+    const patient = await Patient.findById(id).populate("healthCenter", "name");
     if (!patient) {
       return res.status(404).json({ message: "Paciente no encontrado" });
     }
@@ -304,6 +379,22 @@ const deletePatient = async (req, res) => {
     // Realizar soft delete: asignar la fecha actual a 'eliminado_en'
     patient.eliminado_en = new Date();
     await patient.save();
+
+    const nombrePaciente = [patient.primerApellido, patient.segundoApellido, patient.nombres]
+      .filter(Boolean).join(" ");
+
+    crearAuditLog({
+      action:      "patient_delete",
+      performedBy: req.user,
+      targetId:    patient._id,
+      description: `Paciente eliminado: ${nombrePaciente}`,
+      details: {
+        "Nombre completo":  nombrePaciente,
+        "Código SUS":       patient.susCode,
+        "Centro de salud":  patient.healthCenter?.name ?? "—",
+      },
+      ip: req.ip,
+    });
 
     res.status(200).json({ message: "Paciente eliminado correctamente." });
   } catch (error) {

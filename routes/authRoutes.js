@@ -1,5 +1,5 @@
 import express from "express"
-import { register,verifyAccount,login,user,userAccount, forgotPassword, verifyPasswordResetToken, updatePassword, admin } from "../controllers/authController.js"
+import { register,verifyAccount,login,user,userAccount, forgotPassword, verifyPasswordResetToken, updatePassword, admin, updateProfile, changePassword } from "../controllers/authController.js"
 import authMiddleware from "../middleware/authMiddleware.js"
 
 const router = express.Router()
@@ -12,8 +12,10 @@ router.route("/forgot-password/:token").get(verifyPasswordResetToken).post(updat
 
 
 
-//area privada - requiere JWT 
+//area privada - requiere JWT
 router.get("/user",authMiddleware,user)
+router.put("/user/profile", authMiddleware, updateProfile)
+router.put("/user/change-password", authMiddleware, changePassword)
 router.get("/user/:_id", authMiddleware, userAccount)
 router.get("/admin",authMiddleware,admin)
 

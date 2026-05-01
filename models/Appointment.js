@@ -15,11 +15,6 @@ const appointmentSchema = mongoose.Schema({
         required: true,
         trim: true
     },
-    totalAmount:{
-        type: Number,
-        required: true,
-        trim: true
-    },
     user:{
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
@@ -31,6 +26,11 @@ const appointmentSchema = mongoose.Schema({
     doctor: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Doctor",
+        default: null
+    },
+    patient: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Patient",
         default: null
     },
     notes: {

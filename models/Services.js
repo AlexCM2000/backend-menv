@@ -6,11 +6,6 @@ const servicesSchema = mongoose.Schema({
     required: true,
     trim: true,
   },
-  price: {
-    type: Number,
-    required: true,
-    trim: true,
-  },
   category:{
     type:String,
     trim:true,

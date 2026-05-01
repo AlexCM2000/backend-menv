@@ -1,6 +1,7 @@
 import Appointment from "../models/Appointment.js";
 import Patient from "../models/Patient.js";
 import Doctor from "../models/Doctor.js";
+import User from "../models/User.js";
 import mongoose from "mongoose";
 
 const getDashboardStats = async (req, res) => {
@@ -37,12 +38,36 @@ const getDashboardStats = async (req, res) => {
       rangeEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
-    // Filtro por centro de salud
+    // Filtro por centro de salud / rol
     const apptFilter = {};
     const patientFilter = { eliminado_en: null };
     const doctorFilter = {};
+    const isDoctor = req.user.doctor && req.user.doctorProfile;
 
-    if (!req.user.admin && req.user.branchManager && req.user.health) {
+    // Excluir pacientes vinculados a usuarios staff por user ID, email o susCode
+    const staffUsers = await User.find({
+      $or: [{ admin: true }, { doctor: true }, { branchManager: true }],
+    }).select("_id email susCode").lean();
+    const _ec = [];
+    const _sIds    = staffUsers.map(u => u._id);
+    const _sEmails = staffUsers.map(u => u.email).filter(Boolean);
+    const _sSus    = staffUsers.map(u => u.susCode).filter(Boolean);
+    if (_sIds.length)    _ec.push({ user:    { $in: _sIds } });
+    if (_sEmails.length) _ec.push({ email:   { $in: _sEmails } });
+    if (_sSus.length)    _ec.push({ susCode: { $in: _sSus } });
+    if (_ec.length) {
+      const _sp = await Patient.find({ $or: _ec, eliminado_en: null }).select("_id").lean();
+      if (_sp.length) patientFilter._id = { $nin: _sp.map(p => p._id) };
+    }
+
+    if (isDoctor) {
+      // Médico: solo ve sus propias citas
+      apptFilter.doctor = req.user.doctorProfile;
+      if (req.user.health) {
+        const hid = new mongoose.Types.ObjectId(String(req.user.health));
+        apptFilter.health = hid;
+      }
+    } else if (!req.user.admin && req.user.branchManager && req.user.health) {
       const hid = new mongoose.Types.ObjectId(String(req.user.health));
       apptFilter.health = hid;
       patientFilter.healthCenter = hid;
@@ -55,22 +80,30 @@ const getDashboardStats = async (req, res) => {
     }
 
     // KPIs principales en paralelo
+    // Médico no necesita contar pacientes ni médicos activos
     const [citasHoy, citasRango, pacientes, medicosActivos] = await Promise.all([
       Appointment.countDocuments({ ...apptFilter, date: { $gte: todayStart, $lte: todayEnd } }),
       Appointment.countDocuments({ ...apptFilter, date: { $gte: rangeStart, $lte: rangeEnd } }),
-      Patient.countDocuments(patientFilter),
-      Doctor.countDocuments({ ...doctorFilter, active: true }),
+      isDoctor ? Promise.resolve(null) : Patient.countDocuments(patientFilter),
+      isDoctor ? Promise.resolve(null) : Doctor.countDocuments({ ...doctorFilter, active: true }),
     ]);
 
-    // Tasa de asistencia
-    const [completadas, noAsistio] = await Promise.all([
-      Appointment.countDocuments({ ...apptFilter, date: { $gte: rangeStart, $lte: rangeEnd }, state: "Completada" }),
-      Appointment.countDocuments({ ...apptFilter, date: { $gte: rangeStart, $lte: rangeEnd }, state: "No asistio" }),
-    ]);
-    const citasRealizadas = completadas + noAsistio;
-    const tasaAsistencia = citasRealizadas > 0
-      ? Math.round((completadas / citasRealizadas) * 100)
-      : null;
+    // Tasa de asistencia (médico no la ve)
+    let completadas = null;
+    let noAsistio = null;
+    let tasaAsistencia = null;
+    if (!isDoctor) {
+      [completadas, noAsistio] = await Promise.all([
+        Appointment.countDocuments({ ...apptFilter, date: { $gte: rangeStart, $lte: rangeEnd }, state: "Completada" }),
+        Appointment.countDocuments({ ...apptFilter, date: { $gte: rangeStart, $lte: rangeEnd }, state: "No asistio" }),
+      ]);
+    }
+    if (!isDoctor) {
+      const citasRealizadas = completadas + noAsistio;
+      tasaAsistencia = citasRealizadas > 0
+        ? Math.round((completadas / citasRealizadas) * 100)
+        : null;
+    }
 
     // Distribución por estado
     const citasPorEstado = await Appointment.aggregate([
@@ -124,8 +157,8 @@ const getDashboardStats = async (req, res) => {
       { $limit: 8 },
     ]);
 
-    // Top 5 médicos por número de citas
-    const topMedicos = await Appointment.aggregate([
+    // Top 5 médicos por número de citas (médico no lo ve)
+    const topMedicos = isDoctor ? [] : await Appointment.aggregate([
       {
         $match: {
           ...apptFilter,
@@ -156,6 +189,7 @@ const getDashboardStats = async (req, res) => {
     ]);
 
     res.json({
+      isDoctor,
       kpis: {
         citasHoy,
         citasRango,

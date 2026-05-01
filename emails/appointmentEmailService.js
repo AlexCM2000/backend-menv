@@ -1,110 +1,129 @@
+import { createTransport } from "../config/nodeMailer.js";
 
-import {createTransport } from "../config/nodeMailer.js"
+const buildTransporter = () =>
+  createTransport(
+    process.env.EMAIL_HOST,
+    process.env.EMAIL_PORT,
+    process.env.EMAIL_USER,
+    process.env.EMAIL_PASS
+  );
 
-export const sendEmailNewAppointment=async({
-    date,time
-})=>{
-    const transporter = createTransport(process.env.EMAIL_HOST,process.env.EMAIL_PORT,process.env.EMAIL_USER,process.env.EMAIL_PASS)
-   
-    //ENVIAR EMAIL
-    const info = await transporter.sendMail({
-        from: "GAMPA <citas@appsalon.com>",
-        to: "admin@appsalon.com",
-        subject: "App GAMPA - nueva cita",
-        text: "nueva cita :)",
-        html: `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Appointment Confirmation</title>
-    </head>
-    <body>
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Appointment Confirmation</h2>
-            <p style="color: #666;">Dear Customer,</p>
-            <p style="color: #666;">Your appointment has been confirmed.</p>
-            <p style="color: #666;">Date: ${date}</p>
-            <p style="color: #666;">Time: ${time}</p>
-            <p style="color: #666;">Thank you for choosing our service.</p>
-            <p style="color: #666;">Best regards,</p>
-            <p style="color: #666;">The Clinic Team</p>
-        </div>
-    </body>
-    </html>
-    `
-    })
-     
-}
+// Combina destinatarios filtrando valores vacíos
+const buildRecipients = (...emails) => emails.filter(Boolean).join(", ");
 
-export const sendEmailUpdateAppointment=async({
-    date,time
-})=>{
-    const transporter = createTransport(process.env.EMAIL_HOST,process.env.EMAIL_PORT,process.env.EMAIL_USER,process.env.EMAIL_PASS)
-   
-    //ENVIAR EMAIL
-    const info = await transporter.sendMail({
-        from: "GAMPA <citas@appsalon.com>",
-        to: "admin@appsalon.com",
-        subject: "App GAMPA - cita actualizada",
-        text: " cita actualizada :)",
-        html: `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Appointment Confirmation</title>
-    </head>
-    <body>
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Hi admin , appointment has updated</h2>
-            <p style="color: #666;">Dear Customer,</p>
-            <p style="color: #666;">Your appointment has been updated.</p>
-            <p style="color: #666;">Date: ${date}</p>
-            <p style="color: #666;">Time: ${time}</p>
-            <p style="color: #666;">Thank you for choosing our service.</p>
-            <p style="color: #666;">Best regards,</p>
-            <p style="color: #666;">The Clinic Team</p>
-        </div>
-    </body>
-    </html>
-    `
-    })
-     
-}
+export const sendEmailNewAppointment = async ({
+  date,
+  time,
+  userEmail,
+  userName,
+  doctorEmail,
+  doctorName,
+}) => {
+  const to = buildRecipients(userEmail, doctorEmail);
+  if (!to) return;
+  const transporter = buildTransporter();
+  await transporter.sendMail({
+    from: "SIGMED-PA <citas@sigmed-pa.com>",
+    to,
+    subject: `Nueva cita confirmada — ${date} a las ${time}`,
+    text: `Nueva cita confirmada para el ${date} a las ${time}.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #2563eb;">✅ Cita confirmada</h2>
+        ${userName ? `<p>Hola <strong>${userName}</strong>,</p>` : "<p>Estimado/a paciente,</p>"}
+        <p>Tu cita ha sido registrada exitosamente.</p>
+        <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+          <tr style="background:#f0f9ff;">
+            <td style="padding:8px 12px; font-weight:bold;">Fecha</td>
+            <td style="padding:8px 12px;">${date}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px; font-weight:bold;">Hora</td>
+            <td style="padding:8px 12px;">${time}</td>
+          </tr>
+          ${doctorName ? `<tr style="background:#f0f9ff;"><td style="padding:8px 12px; font-weight:bold;">Médico</td><td style="padding:8px 12px;">${doctorName}</td></tr>` : ""}
+        </table>
+        <p style="color:#666; font-size:13px;">Si no agendaste esta cita, por favor contáctanos.</p>
+        <p style="color:#666;">— Equipo SIGMED-PA</p>
+      </div>
+    `,
+  });
+};
 
-export const sendEmailDeleteAppointment=async({
-    date,time
-})=>{
-    const transporter = createTransport(process.env.EMAIL_HOST,process.env.EMAIL_PORT,process.env.EMAIL_USER,process.env.EMAIL_PASS)
-   
-    //ENVIAR EMAIL
-    const info = await transporter.sendMail({
-        from: "GAMPA <citas@appsalon.com>",
-        to: "admin@appsalon.com",
-        subject: "App GAMPA - cita eliminada",
-        text: " cita eliminada :(",
-        html:   `<!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Appointment Confirmation</title>
-    </head>
-    <body>
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2 style="color: #333;">Hi admin , appointment has deleted</h2>
-            <p style="color: #666;">Dear Customer,</p>
-            <p style="color: #666;">Your appointment has been deleted.</p>
-            <p style="color: #666;">Date: ${date}</p>
-            <p style="color: #666;">Time: ${time}</p>
-            <p style="color: #666;">Thank you for choosing our service.</p>
-            <p style="color: #666;">Best regards,</p>
-            <p style="color: #666;">The Clinic Team</p>
-        </div>
-    </body>
-    </html>
-    `
-    })
-     
-}
+export const sendEmailUpdateAppointment = async ({
+  date,
+  time,
+  userEmail,
+  userName,
+  doctorEmail,
+  doctorName,
+}) => {
+  const to = buildRecipients(userEmail, doctorEmail);
+  if (!to) return;
+  const transporter = buildTransporter();
+  await transporter.sendMail({
+    from: "SIGMED-PA <citas@sigmed-pa.com>",
+    to,
+    subject: `Cita actualizada — ${date} a las ${time}`,
+    text: `Tu cita ha sido actualizada para el ${date} a las ${time}.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #d97706;">📝 Cita actualizada</h2>
+        ${userName ? `<p>Hola <strong>${userName}</strong>,</p>` : "<p>Estimado/a paciente,</p>"}
+        <p>Los datos de tu cita han sido actualizados.</p>
+        <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+          <tr style="background:#fffbeb;">
+            <td style="padding:8px 12px; font-weight:bold;">Nueva fecha</td>
+            <td style="padding:8px 12px;">${date}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px; font-weight:bold;">Nueva hora</td>
+            <td style="padding:8px 12px;">${time}</td>
+          </tr>
+          ${doctorName ? `<tr style="background:#fffbeb;"><td style="padding:8px 12px; font-weight:bold;">Médico</td><td style="padding:8px 12px;">${doctorName}</td></tr>` : ""}
+        </table>
+        <p style="color:#666; font-size:13px;">Si no reconoces este cambio, por favor contáctanos.</p>
+        <p style="color:#666;">— Equipo SIGMED-PA</p>
+      </div>
+    `,
+  });
+};
+
+export const sendEmailDeleteAppointment = async ({
+  date,
+  time,
+  userEmail,
+  userName,
+  doctorEmail,
+  doctorName,
+}) => {
+  const to = buildRecipients(userEmail, doctorEmail);
+  if (!to) return;
+  const transporter = buildTransporter();
+  await transporter.sendMail({
+    from: "SIGMED-PA <citas@sigmed-pa.com>",
+    to,
+    subject: `Cita cancelada — ${date} a las ${time}`,
+    text: `Tu cita del ${date} a las ${time} ha sido cancelada.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333;">
+        <h2 style="color: #dc2626;">❌ Cita cancelada</h2>
+        ${userName ? `<p>Hola <strong>${userName}</strong>,</p>` : "<p>Estimado/a paciente,</p>"}
+        <p>Tu cita ha sido cancelada.</p>
+        <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+          <tr style="background:#fef2f2;">
+            <td style="padding:8px 12px; font-weight:bold;">Fecha</td>
+            <td style="padding:8px 12px;">${date}</td>
+          </tr>
+          <tr>
+            <td style="padding:8px 12px; font-weight:bold;">Hora</td>
+            <td style="padding:8px 12px;">${time}</td>
+          </tr>
+          ${doctorName ? `<tr style="background:#fef2f2;"><td style="padding:8px 12px; font-weight:bold;">Médico</td><td style="padding:8px 12px;">${doctorName}</td></tr>` : ""}
+        </table>
+        <p style="color:#666; font-size:13px;">Si necesitas reagendar, ingresa a la plataforma.</p>
+        <p style="color:#666;">— Equipo SIGMED-PA</p>
+      </div>
+    `,
+  });
+};

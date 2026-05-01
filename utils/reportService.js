@@ -32,7 +32,7 @@ function colLetter(n) {
 // ═══════════════════════════════════════════════════════════════════════════════
 export const buildExcel = async ({ title, filters, columns, rows, summary }) => {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Sistema MQV";
+  wb.creator = "SIGMED-PA";
   wb.created = new Date();
 
   const ws = wb.addWorksheet(title.substring(0, 31), {
@@ -54,7 +54,7 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
   // ── Fila 2: Generado + total ────────────────────────────────────────────────
   ws.mergeCells(`A2:${lastCol}2`);
   const metaCell = ws.getCell("A2");
-  metaCell.value = `Generado: ${dayjs().format("DD/MM/YYYY HH:mm")}   |   Total registros: ${rows.length}   |   Sistema MQV`;
+  metaCell.value = `Generado: ${dayjs().format("DD/MM/YYYY HH:mm")}   |   Total registros: ${rows.length}   |   SIGMED-PA`;
   metaCell.font = { size: 8.5, color: { argb: "FF64748B" }, italic: true };
   metaCell.alignment = { horizontal: "left", vertical: "middle" };
   metaCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
@@ -155,7 +155,7 @@ export const buildPDF = ({ title, filters, columns, rows, summary }) => {
       margin: 40,
       size: "A4",
       layout: "landscape",
-      info: { Title: title, Author: "Sistema MQV", Creator: "Sistema MQV" },
+      info: { Title: title, Author: "SIGMED-PA", Creator: "SIGMED-PA" },
       bufferPages: true,
     });
 
@@ -185,7 +185,7 @@ export const buildPDF = ({ title, filters, columns, rows, summary }) => {
 
       // System name
       doc.fillColor("#FFFFFF").font("Helvetica-Bold").fontSize(15)
-        .text("Sistema MQV", margin + 42, ly + 2);
+        .text("SIGMED-PA", margin + 42, ly + 2);
       doc.fillColor("#BFDBFE").font("Helvetica").fontSize(8)
         .text("Gestión de Salud", margin + 42, ly + 19);
 

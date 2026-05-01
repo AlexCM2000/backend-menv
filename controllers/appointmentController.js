@@ -16,7 +16,21 @@ const createAppointment = async (req, res) => {
     let appointmentUserId = req.user._id.toString();
     let appointmentHealth = req.user.health;
 
-    if (isStaff && req.body.targetUserId) {
+    if (isStaff && req.body.targetPatientId) {
+        // Crear cita para un paciente (con o sin cuenta de usuario)
+        const targetPatient = await Patient.findById(req.body.targetPatientId).select("user healthCenter");
+        if (!targetPatient) {
+            return res.status(404).json({ message: "Paciente no encontrado." });
+        }
+        // Verificar que branchManager solo cree citas para pacientes de su centro
+        if (!req.user.admin && req.user.branchManager) {
+            if (targetPatient.healthCenter?.toString() !== req.user.health?.toString()) {
+                return res.status(403).json({ message: "Solo puede crear citas para pacientes de su centro de salud." });
+            }
+        }
+        appointmentUserId = targetPatient.user ?? null;
+        appointmentHealth = targetPatient.healthCenter;
+    } else if (isStaff && req.body.targetUserId) {
         const targetUser = await User.findById(req.body.targetUserId).select("health");
         if (!targetUser) {
             return res.status(404).json({ message: "Usuario no encontrado." });
@@ -27,8 +41,8 @@ const createAppointment = async (req, res) => {
         return res.status(400).json({ message: "El usuario no tiene un centro de salud asignado." });
     }
 
-    const { date, totalAmount, time } = req.body;
-    if (!date || !Number.isFinite(totalAmount) || !time) {
+    const { date, time } = req.body;
+    if (!date || !time) {
         return res.status(400).json({ message: "Todos los campos son obligatorios" });
     }
 
@@ -88,20 +102,34 @@ const createAppointment = async (req, res) => {
         services: req.body.services,
         date: normalizedDate,
         time,
-        totalAmount,
         notes: req.body.notes || "",
         state: req.body.state || "Pendiente",
         doctor: doctorToAssign,
         user: appointmentUserId,
         health: healthId,
+        patient: req.body.targetPatientId || null,
     };
 
     // Guardar con manejo de race condition (índice único)
+    console.log("[createAppointment] newAppointmentData:", JSON.stringify({ user: newAppointmentData.user, patient: newAppointmentData.patient, health: newAppointmentData.health?.toString() }));
     const newAppointment = new Appointment(newAppointmentData);
     try {
         const result = await newAppointment.save();
-        sendEmailNewAppointment({ date: formatDate(result.date), time: result.time })
-            .catch(err => console.error("Error al enviar email de nueva cita:", err));
+        console.log("[createAppointment] saved _id:", result._id, "patient:", result.patient, "user:", result.user);
+        // Buscar datos del paciente y médico para el correo (no bloqueante)
+        Promise.all([
+            User.findById(appointmentUserId).select("email nombres primerApellido"),
+            doctorToAssign ? Doctor.findById(doctorToAssign).select("name contactInfo") : Promise.resolve(null),
+        ]).then(([apptUser, apptDoctor]) =>
+            sendEmailNewAppointment({
+                date: formatDate(result.date),
+                time: result.time,
+                userEmail: apptUser?.email,
+                userName: [apptUser?.primerApellido, apptUser?.nombres].filter(Boolean).join(" "),
+                doctorEmail: apptDoctor?.contactInfo?.email,
+                doctorName: apptDoctor?.name,
+            })
+        ).catch(err => console.error("Error al enviar email de nueva cita:", err));
         return res.json({ msg: "Cita creada correctamente" });
     } catch (saveError) {
         if (saveError.code === 11000) {
@@ -139,19 +167,17 @@ const getAppointmentDate = async (req, res) => {
 const getAvailability = async (req, res) => {
     try {
         const { date, category, excludeId } = req.query;
-        if (!date || !category) return res.status(400).json({ msg: "date y category son requeridos" });
+        if (!date) return res.status(400).json({ msg: "date es requerido" });
 
         const newDate = parse(date, "dd/MM/yyyy", new Date());
         if (!isValid(newDate)) return res.status(400).json({ msg: "Fecha inválida" });
 
         const healthId = req.user.health;
 
-        // Médicos activos de esa especialidad en el centro
-        const doctors = await Doctor.find({
-            health: healthId,
-            specialty: category,
-            active: true
-        }).select("_id name specialty");
+        // Médicos activos de esa especialidad en el centro (solo si se indica categoría)
+        const doctors = category
+            ? await Doctor.find({ health: healthId, specialty: category, active: true }).select("_id name specialty")
+            : [];
 
         // Citas en ese centro ese día
         const isoDate = formatISO(newDate);
@@ -162,6 +188,11 @@ const getAvailability = async (req, res) => {
         // Excluir la cita actual si se está editando
         if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
             appointmentQuery._id = { $ne: excludeId };
+        }
+        // Si hay categoría, filtrar citas solo de médicos de esa especialidad
+        // Esto evita que citas de otras especialidades bloqueen horarios incorrectamente
+        if (doctors.length > 0) {
+            appointmentQuery.doctor = { $in: doctors.map(d => d._id) };
         }
 
         const appointments = await Appointment.find(appointmentQuery).select("time doctor");
@@ -206,7 +237,7 @@ const updateAppointment = async (req, res) => {
         return res.status(403).json({ msg: "No tienes los permisos para modificar esta cita" });
     }
 
-    const { services, time, date, totalAmount, state, doctor, notes } = req.body;
+    const { services, time, date, state, doctor, notes } = req.body;
 
     // Definir los estados válidos
     const validStates = [
@@ -224,11 +255,37 @@ const updateAppointment = async (req, res) => {
         return res.status(400).json({ msg: `El estado '${state}' no es válido. Los estados permitidos son: ${validStates.join(', ')}` });
     }
 
+    // Bug 26: Validar 24h de anticipación para cancelación por usuario regular
+    if (!isStaff && state === "Cancelada") {
+        const apptDate = startOfDay(new Date(appointment.date));
+        const cutoff = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        if (apptDate <= cutoff) {
+            return res.status(400).json({ msg: "No puedes cancelar una cita con menos de 24 horas de anticipación. Contacta al centro de salud para realizar cambios." });
+        }
+    }
+
+    // Validar que el nuevo doctor+fecha+hora no esté ocupado por otra cita
+    const newDate = date ? startOfDay(new Date(date)) : startOfDay(new Date(appointment.date));
+    const newTime = time || appointment.time;
+    const newDoctor = doctor !== undefined ? (doctor || null) : appointment.doctor;
+    if (newDoctor) {
+        const conflict = await Appointment.findOne({
+            _id: { $ne: id },
+            doctor: newDoctor,
+            time: newTime,
+            date: { $gte: newDate, $lte: endOfDay(newDate) },
+        });
+        if (conflict) {
+            return res.status(409).json({
+                msg: `El médico ya tiene una cita programada el ${newDate.toLocaleDateString('es-BO')} a las ${newTime}. Selecciona otro horario o médico.`
+            });
+        }
+    }
+
     // Actualizar solo los campos que estén presentes en req.body
     if (date) appointment.date = date;
     if (services) appointment.services = services;
     if (time) appointment.time = time;
-    if (totalAmount) appointment.totalAmount = totalAmount;
     if (doctor !== undefined) appointment.doctor = doctor || null;
     if (notes !== undefined) appointment.notes = notes;
     appointment.state = state;
@@ -239,27 +296,49 @@ const updateAppointment = async (req, res) => {
         // Auto-vincular al HistorialClínico cuando la cita se completa
         if (state === "Completada") {
             try {
-                const apptUser = await User.findById(appointment.user._id).select("susCode");
-                if (apptUser?.susCode) {
-                    const patient = await Patient.findOne({ susCode: apptUser.susCode, eliminado_en: null }).select("medicalHistory");
-                    if (patient?.medicalHistory) {
-                        await HealthRecord.findByIdAndUpdate(
-                            patient.medicalHistory,
-                            { $addToSet: { medicalAppointments: appointment._id } }
-                        );
+                let patientRecord = null;
+                if (appointment.patient) {
+                    // Cita creada para paciente sin cuenta: referencia directa
+                    patientRecord = await Patient.findById(appointment.patient).select("medicalHistory");
+                } else if (appointment.user) {
+                    // Cita creada por usuario con cuenta: buscar paciente por susCode
+                    const apptUser = await User.findById(appointment.user._id).select("susCode");
+                    if (apptUser?.susCode) {
+                        patientRecord = await Patient.findOne({ susCode: apptUser.susCode, eliminado_en: null }).select("medicalHistory");
                     }
+                }
+                if (patientRecord?.medicalHistory) {
+                    await HealthRecord.findByIdAndUpdate(
+                        patientRecord.medicalHistory,
+                        { $addToSet: { medicalAppointments: appointment._id } }
+                    );
                 }
             } catch (linkErr) {
                 console.error("Error al vincular cita al historial (no bloqueante):", linkErr);
             }
         }
 
-        sendEmailUpdateAppointment({ date: formatDate(result.date), time: result.time })
-            .catch(err => console.error("Error al enviar email de actualización:", err));
+        // Buscar datos del paciente y médico para el correo (no bloqueante)
+        Promise.all([
+            User.findById(appointment.user).select("email nombres primerApellido"),
+            appointment.doctor ? Doctor.findById(appointment.doctor).select("name contactInfo") : Promise.resolve(null),
+        ]).then(([apptUser, apptDoctor]) =>
+            sendEmailUpdateAppointment({
+                date: formatDate(result.date),
+                time: result.time,
+                userEmail: apptUser?.email,
+                userName: [apptUser?.primerApellido, apptUser?.nombres].filter(Boolean).join(" "),
+                doctorEmail: apptDoctor?.contactInfo?.email,
+                doctorName: apptDoctor?.name,
+            })
+        ).catch(err => console.error("Error al enviar email de actualización:", err));
 
         res.json({ msg: "Cita actualizada correctamente" });
     } catch (error) {
         console.log(error);
+        if (error.code === 11000) {
+            return res.status(409).json({ msg: "El médico ya tiene una cita en ese horario. Selecciona otro horario o médico." });
+        }
         res.status(500).json({ msg: "Error al actualizar la cita" });
     }
 };
@@ -273,15 +352,34 @@ const deleteAppointment = async (req, res) => {
     if (!appointment) {
         return handleNotFoundError("La cita no existe", res);
     }
-    if (appointment.user._id.toString() !== req.user._id.toString()) {
+    const isStaffDel = req.user.admin || req.user.branchManager;
+    if (!isStaffDel && (!appointment.user || appointment.user._id.toString() !== req.user._id.toString())) {
         const error = new Error("No tienes los permisos para ver esta cita");
         return res.status(403).json({ msg: error.message });
     }
     try {
-        const result = await appointment.deleteOne();
+        // Guardar datos antes de borrar para el correo
+        const apptDate = appointment.date;
+        const apptTime = appointment.time;
+        const apptUserId = appointment.user;
+        const apptDoctorId = appointment.doctor;
 
-        sendEmailDeleteAppointment({ date: formatDate(result.date), time: result.time })
-            .catch(err => console.error("Error al enviar email de eliminación:", err));
+        await appointment.deleteOne();
+
+        // Buscar datos del paciente y médico para el correo (no bloqueante)
+        Promise.all([
+            User.findById(apptUserId).select("email nombres primerApellido"),
+            apptDoctorId ? Doctor.findById(apptDoctorId).select("name contactInfo") : Promise.resolve(null),
+        ]).then(([apptUser, apptDoctor]) =>
+            sendEmailDeleteAppointment({
+                date: formatDate(apptDate),
+                time: apptTime,
+                userEmail: apptUser?.email,
+                userName: [apptUser?.primerApellido, apptUser?.nombres].filter(Boolean).join(" "),
+                doctorEmail: apptDoctor?.contactInfo?.email,
+                doctorName: apptDoctor?.name,
+            })
+        ).catch(err => console.error("Error al enviar email de eliminación:", err));
 
         res.json({ msg: "Cita eliminada correctamente" });
 
@@ -309,14 +407,23 @@ const getCalendarAppointments = async (req, res) => {
         } else if (user.branchManager) {
             // Gestor de sucursal: solo ve las citas de su centro
             if (user.health) query.health = user.health;
+        } else if (user.doctor && user.doctorProfile) {
+            // Médico: solo ve las citas asignadas a él como doctor
+            query.doctor = user.doctorProfile;
         } else {
-            // Usuario regular: solo sus propias citas
-            query.user = user._id;
+            // Usuario regular: sus citas directas + citas creadas por staff vinculadas a su ficha de paciente
+            const patientRecord = await Patient.findOne({ user: user._id, eliminado_en: null }).select("_id");
+            if (patientRecord) {
+                query.$or = [{ user: user._id }, { patient: patientRecord._id }];
+            } else {
+                query.user = user._id;
+            }
         }
 
         const appointments = await Appointment.find(query)
             .populate('services', 'name category')
-            .populate('user', 'name')
+            .populate('user', 'primerApellido segundoApellido nombres email')
+            .populate('patient', 'primerApellido segundoApellido nombres')
             .populate('health', 'name');
 
         res.json(appointments);

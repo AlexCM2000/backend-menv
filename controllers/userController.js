@@ -1,6 +1,36 @@
 import Appointment from "../models/Appointment.js"
 import Health from "../models/HealthCenter.js";
 import User from "../models/User.js";
+import Patient from "../models/Patient.js";
+
+// Busca citas por nombre buscando en User Y Patient (para citas sin cuenta de usuario)
+const applySearchFilter = async (query, searchName) => {
+    const nameRegex = { $regex: searchName, $options: "i" };
+    const nameCondition = [
+        { primerApellido: nameRegex },
+        { segundoApellido: nameRegex },
+        { nombres: nameRegex },
+        { email: nameRegex },
+    ];
+
+    const [users, patients] = await Promise.all([
+        User.find({ $or: nameCondition }).select("_id"),
+        Patient.find({ $or: nameCondition, eliminado_en: null }).select("_id"),
+    ]);
+
+    const userIds = users.map(u => u._id);
+    const patientIds = patients.map(p => p._id);
+
+    if (!userIds.length && !patientIds.length) {
+        query.__emptySearch = true;
+        return;
+    }
+
+    const conditions = [];
+    if (userIds.length) conditions.push({ user: { $in: userIds } });
+    if (patientIds.length) conditions.push({ patient: { $in: patientIds } });
+    query.$or = conditions;
+};
 
 const getUserAppointments = async (req, res) => {
     const healthCode = req.query.health; // Capturamos el código de health desde los query parameters
@@ -22,58 +52,25 @@ const getUserAppointments = async (req, res) => {
         if (req.user.admin) {
             // Si el usuario es admin, incluir la lógica de health
             if (healthCode) {
-                // Buscar el ObjectId correspondiente al healthCode
                 const healthRecord = await Health.findOne({ codigo: healthCode });
-
                 if (!healthRecord) {
                     return res.status(404).json({ message: "Centro de salud no encontrado." });
                 }
-
-                query.health = healthRecord._id; // Asignar el ObjectId encontrado
+                query.health = healthRecord._id;
             }
-             // Si hay un nombre de búsqueda, primero busca los usuarios
-        let userIds = [];
-        if (searchName) {
-            const users = await User.find({
-                $or: [
-                    { primerApellido: { $regex: searchName, $options: "i" } },
-                    { segundoApellido: { $regex: searchName, $options: "i" } },
-                    { nombres: { $regex: searchName, $options: "i" } },
-                    { email: { $regex: searchName, $options: "i" } }
-                ]
-            });
-
-            // Extraer los IDs de los usuarios encontrados
-            userIds = users.map(user => user._id);
-            if (userIds.length > 0) {
-                query.user = { $in: userIds }; // Usar $in para buscar citas con esos usuarios
-            } else {
-                return res.json({ page, page_size, count: 0, results: [] }); // Si no hay usuarios, devuelve vacío
+            if (searchName) {
+                await applySearchFilter(query, searchName);
+                if (query.__emptySearch) return res.json({ page, page_size, count: 0, results: [] });
+                delete query.__emptySearch;
             }
-        }
         } else if (req.user.branchManager) {
             // Si el usuario es branchManager, filtrar por su centro de salud
             query.health = req.user.health;
-             // Si hay un nombre de búsqueda, primero busca los usuarios
-        let userIds = [];
-        if (searchName) {
-            const users = await User.find({
-                $or: [
-                    { primerApellido: { $regex: searchName, $options: "i" } },
-                    { segundoApellido: { $regex: searchName, $options: "i" } },
-                    { nombres: { $regex: searchName, $options: "i" } },
-                    { email: { $regex: searchName, $options: "i" } }
-                ]
-            });
-
-            // Extraer los IDs de los usuarios encontrados
-            userIds = users.map(user => user._id);
-            if (userIds.length > 0) {
-                query.user = { $in: userIds }; // Usar $in para buscar citas con esos usuarios
-            } else {
-                return res.json({ page, page_size, count: 0, results: [] }); // Si no hay usuarios, devuelve vacío
+            if (searchName) {
+                await applySearchFilter(query, searchName);
+                if (query.__emptySearch) return res.json({ page, page_size, count: 0, results: [] });
+                delete query.__emptySearch;
             }
-        }
         } else if (req.user.doctor && req.user.doctorProfile) {
             // Doctor: solo ve citas asignadas a su perfil de médico, en su centro de salud
             query.doctor = req.user.doctorProfile;
@@ -121,11 +118,13 @@ const getUserAppointments = async (req, res) => {
             }
         }
 
-        // Realizar la consulta de citas médicas y usar populate para incluir los detalles del usuario
+        console.log("[getUserAppointments] query:", JSON.stringify(query));
+        // Realizar la consulta de citas médicas y usar populate para incluir los detalles del usuario/paciente
         const paginatedAppointments = await Appointment.find(query)
             .populate('services')
             .populate('health', 'name codigo')
             .populate('user', 'primerApellido segundoApellido nombres email susCode')
+            .populate('patient', 'primerApellido segundoApellido nombres susCode')
             .populate('doctor', 'name specialty')
             .limit(page_size)
             .skip((page - 1) * page_size);
@@ -133,6 +132,7 @@ const getUserAppointments = async (req, res) => {
         // Contar total de citas que coinciden con la consulta
         const count = await Appointment.countDocuments(query);
 
+        console.log("[getUserAppointments] first result user/patient:", paginatedAppointments[0]?.user, "/", paginatedAppointments[0]?.patient);
         // Devolver los resultados paginados con la información poblada
         return res.json({
             page,

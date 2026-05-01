@@ -35,6 +35,10 @@ const userSchema = mongoose.Schema(
       type: String,
       default: () => uniqueId(),
     },
+    passwordResetExpires: {
+      type: Date,
+      default: null,
+    },
     verified: {
       type: Boolean,
       default: false,
@@ -68,7 +72,7 @@ const userSchema = mongoose.Schema(
       trim: true,
     },
   },
-  { timesTamps: true }
+  { timestamps: true }
 );
 
 userSchema.pre("save", async function (next) {

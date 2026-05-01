@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node --watch index.js",
     "seed:import": "node data/seed.js --import",
-    "seed:destroy": "node data/seed.js --destroy"
+    "seed:destroy": "node data/seed.js --destroy",
+    "db:cleanup": "node data/dropOrphanCollections.js"
   },
   "author": "Alex Churata MQV",
   "license": "ISC",

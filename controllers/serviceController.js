@@ -9,13 +9,13 @@ const createService = async (req, res) => {
     return res.status(403).json({ msg: "No tienes permisos para crear servicios" });
   }
 
-  const { name, price, category } = req.body;
-  if (!name || name.trim() === "" || price === undefined || price === "" || !category || category.trim() === "") {
+  const { name, category } = req.body;
+  if (!name || name.trim() === "" || !category || category.trim() === "") {
     return res.status(400).json({ msg: "Todos los campos son obligatorios" });
   }
 
   try {
-    const service = new Services({ name: name.trim(), price, category: category.trim() });
+    const service = new Services({ name: name.trim(), category: category.trim() });
     const saved = await service.save();
     return res.json({ msg: "El servicio se creó correctamente", service: saved });
   } catch (error) {
@@ -91,7 +91,6 @@ const updateService = async (req, res) => {
   }
 
   service.name = req.body.name || service.name;
-  service.price = req.body.price !== undefined ? req.body.price : service.price;
   service.category = req.body.category || service.category;
 
   try {
