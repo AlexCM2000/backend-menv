@@ -1,29 +1,13 @@
-import { createTransport } from "../config/nodeMailer.js";
+import { sendEmail } from "../config/nodeMailer.js";
 
-const buildTransporter = () =>
-  createTransport(
-    process.env.EMAIL_HOST,
-    process.env.EMAIL_PORT,
-    process.env.EMAIL_USER,
-    process.env.EMAIL_PASS
-  );
-
-// Combina destinatarios filtrando valores vacíos
 const buildRecipients = (...emails) => emails.filter(Boolean).join(", ");
 
 export const sendEmailNewAppointment = async ({
-  date,
-  time,
-  userEmail,
-  userName,
-  doctorEmail,
-  doctorName,
+  date, time, userEmail, userName, doctorEmail, doctorName,
 }) => {
   const to = buildRecipients(userEmail, doctorEmail);
   if (!to) return;
-  const transporter = buildTransporter();
-  await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
+  await sendEmail({
     to,
     subject: `Nueva cita confirmada — ${date} a las ${time}`,
     text: `Nueva cita confirmada para el ${date} a las ${time}.`,
@@ -51,18 +35,11 @@ export const sendEmailNewAppointment = async ({
 };
 
 export const sendEmailUpdateAppointment = async ({
-  date,
-  time,
-  userEmail,
-  userName,
-  doctorEmail,
-  doctorName,
+  date, time, userEmail, userName, doctorEmail, doctorName,
 }) => {
   const to = buildRecipients(userEmail, doctorEmail);
   if (!to) return;
-  const transporter = buildTransporter();
-  await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
+  await sendEmail({
     to,
     subject: `Cita actualizada — ${date} a las ${time}`,
     text: `Tu cita ha sido actualizada para el ${date} a las ${time}.`,
@@ -90,18 +67,11 @@ export const sendEmailUpdateAppointment = async ({
 };
 
 export const sendEmailDeleteAppointment = async ({
-  date,
-  time,
-  userEmail,
-  userName,
-  doctorEmail,
-  doctorName,
+  date, time, userEmail, userName, doctorEmail, doctorName,
 }) => {
   const to = buildRecipients(userEmail, doctorEmail);
   if (!to) return;
-  const transporter = buildTransporter();
-  await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
+  await sendEmail({
     to,
     subject: `Cita cancelada — ${date} a las ${time}`,
     text: `Tu cita del ${date} a las ${time} ha sido cancelada.`,

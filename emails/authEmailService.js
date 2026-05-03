@@ -1,14 +1,7 @@
-import { createTransport } from "../config/nodeMailer.js";
+import { sendEmail } from "../config/nodeMailer.js";
 
 export const sendEmailVerification = async ({ name, email, token }) => {
-  const transporter = createTransport(
-    process.env.EMAIL_HOST,
-    process.env.EMAIL_PORT,
-    process.env.EMAIL_USER,
-    process.env.EMAIL_PASS,
-  );
-  const info = await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
+  await sendEmail({
     to: email,
     subject: "Confirma tu cuenta — SIGMED-PA",
     text: `Hola ${name}, confirma tu cuenta en el SIGMED-PA.`,
@@ -27,18 +20,10 @@ export const sendEmailVerification = async ({ name, email, token }) => {
           <p style="color:#666;">— Equipo SIGMED-PA</p>
         </div>`,
   });
-  console.log("Mensaje enviado: %s", info.messageId);
 };
 
 export const sendEmailPasswordReset = async ({ name, email, token }) => {
-  const transporter = createTransport(
-    process.env.EMAIL_HOST,
-    process.env.EMAIL_PORT,
-    process.env.EMAIL_USER,
-    process.env.EMAIL_PASS,
-  );
-  const info = await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
+  await sendEmail({
     to: email,
     subject: "Restablecer contraseña — SIGMED-PA",
     text: `Hola ${name}, recibimos una solicitud para restablecer tu contraseña en el SIGMED-PA. El enlace es válido por 2 horas.`,
@@ -63,5 +48,4 @@ export const sendEmailPasswordReset = async ({ name, email, token }) => {
           <p style="color:#666;">— Equipo SIGMED-PA</p>
         </div>`,
   });
-  console.log("Mensaje enviado: %s", info.messageId);
 };
