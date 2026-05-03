@@ -3,20 +3,20 @@ import { sendEmail } from "../config/nodeMailer.js";
 export const sendEmailVerification = async ({ name, email, token }) => {
   await sendEmail({
     to: email,
-    subject: "Confirma tu cuenta — SIGMED-PA",
-    text: `Hola ${name}, confirma tu cuenta en el SIGMED-PA.`,
+    subject: `Bienvenido/a a SIGMED-PA, ${name}`,
+    text: `Hola ${name}, tu registro en SIGMED-PA fue recibido. Activa tu cuenta en: ${process.env.FRONTEND_URL}/auth/confirmar-cuenta/${token}`,
     html: `
         <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;color:#333;">
-          <h2 style="color:#2563eb;">✅ Confirma tu cuenta</h2>
+          <h2 style="color:#2563eb;">Bienvenido/a a SIGMED-PA</h2>
           <p>Hola <strong>${name}</strong>,</p>
-          <p>Tu cuenta en el <strong>SIGMED-PA</strong> está casi lista. Haz clic en el siguiente botón para confirmarla:</p>
+          <p>Tu registro fue recibido correctamente. Para activar tu cuenta y comenzar a usar el sistema, haz clic en el botón:</p>
           <p style="text-align:center;margin:24px 0;">
             <a href="${process.env.FRONTEND_URL}/auth/confirmar-cuenta/${token}"
                style="background:#2563eb;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:bold;display:inline-block;">
-              Confirmar cuenta
+              Activar cuenta
             </a>
           </p>
-          <p style="color:#666;font-size:13px;">Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
+          <p style="color:#666;font-size:13px;">Si no realizaste este registro, puedes ignorar este mensaje.</p>
           <p style="color:#666;">— Equipo SIGMED-PA</p>
         </div>`,
   });
