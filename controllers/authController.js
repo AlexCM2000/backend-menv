@@ -77,10 +77,14 @@ const register = async (req, res) => {
       console.log(`[Email] Verificación enviada correctamente a: ${saved.email}`);
     } catch (emailErr) {
       console.error(`[Email] Error al enviar verificación a ${saved.email}:`, emailErr.message || emailErr);
-      saved.verified = true;
-      saved.token = "";
-      await saved.save();
-      console.warn(`[Email] Usuario auto-verificado por fallo SMTP: ${saved.email}`);
+      try {
+        saved.verified = true;
+        saved.token = "";
+        await saved.save();
+        console.warn(`[Email] Usuario auto-verificado por fallo SMTP: ${saved.email}`);
+      } catch (saveErr) {
+        console.error("[Email] Error al auto-verificar usuario:", saveErr.message || saveErr);
+      }
     }
 
     // Auto-crear o vincular ficha de paciente + historial clínico (no bloqueante)
