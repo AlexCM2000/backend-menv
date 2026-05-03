@@ -8,7 +8,7 @@ export const sendEmailVerification = async ({ name, email, token }) => {
     process.env.EMAIL_PASS,
   );
   const info = await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_USER}>`,
+    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
     to: email,
     subject: "Confirma tu cuenta — SIGMED-PA",
     text: `Hola ${name}, confirma tu cuenta en el SIGMED-PA.`,
@@ -38,7 +38,7 @@ export const sendEmailPasswordReset = async ({ name, email, token }) => {
     process.env.EMAIL_PASS,
   );
   const info = await transporter.sendMail({
-    from: `SIGMED-PA <${process.env.EMAIL_USER}>`,
+    from: `SIGMED-PA <${process.env.EMAIL_FROM}>`,
     to: email,
     subject: "Restablecer contraseña — SIGMED-PA",
     text: `Hola ${name}, recibimos una solicitud para restablecer tu contraseña en el SIGMED-PA. El enlace es válido por 2 horas.`,
