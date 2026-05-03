@@ -23,7 +23,7 @@ export const sendEmailNewAppointment = async ({
   if (!to) return;
   const transporter = buildTransporter();
   await transporter.sendMail({
-    from: "SIGMED-PA <citas@sigmed-pa.com>",
+    from: `SIGMED-PA <${process.env.EMAIL_USER}>`,
     to,
     subject: `Nueva cita confirmada — ${date} a las ${time}`,
     text: `Nueva cita confirmada para el ${date} a las ${time}.`,
@@ -62,7 +62,7 @@ export const sendEmailUpdateAppointment = async ({
   if (!to) return;
   const transporter = buildTransporter();
   await transporter.sendMail({
-    from: "SIGMED-PA <citas@sigmed-pa.com>",
+    from: `SIGMED-PA <${process.env.EMAIL_USER}>`,
     to,
     subject: `Cita actualizada — ${date} a las ${time}`,
     text: `Tu cita ha sido actualizada para el ${date} a las ${time}.`,
@@ -101,7 +101,7 @@ export const sendEmailDeleteAppointment = async ({
   if (!to) return;
   const transporter = buildTransporter();
   await transporter.sendMail({
-    from: "SIGMED-PA <citas@sigmed-pa.com>",
+    from: `SIGMED-PA <${process.env.EMAIL_USER}>`,
     to,
     subject: `Cita cancelada — ${date} a las ${time}`,
     text: `Tu cita del ${date} a las ${time} ha sido cancelada.`,
