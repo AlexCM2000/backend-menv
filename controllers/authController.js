@@ -67,22 +67,21 @@ const register = async (req, res) => {
     });
     const saved = await newUser.save();
     const fullName = [saved.primerApellido, saved.segundoApellido, saved.nombres].filter(Boolean).join(" ");
-    sendEmailVerification({
-      name: fullName,
-      email: saved.email,
-      token: saved.token,
-    }).catch(async (emailErr) => {
-      console.error("Error al enviar email de verificación:", emailErr);
-      // Si el email falla (ej: SMTP caído), auto-verificar para que el usuario pueda ingresar
-      try {
-        saved.verified = true;
-        saved.token = "";
-        await saved.save();
-        console.warn("Usuario auto-verificado por fallo de email:", saved.email);
-      } catch (saveErr) {
-        console.error("Error al auto-verificar usuario:", saveErr);
-      }
-    });
+    console.log(`[Email] Intentando enviar verificación a: ${saved.email} desde: ${process.env.EMAIL_FROM}`);
+    try {
+      await sendEmailVerification({
+        name: fullName,
+        email: saved.email,
+        token: saved.token,
+      });
+      console.log(`[Email] Verificación enviada correctamente a: ${saved.email}`);
+    } catch (emailErr) {
+      console.error(`[Email] Error al enviar verificación a ${saved.email}:`, emailErr.message || emailErr);
+      saved.verified = true;
+      saved.token = "";
+      await saved.save();
+      console.warn(`[Email] Usuario auto-verificado por fallo SMTP: ${saved.email}`);
+    }
 
     // Auto-crear o vincular ficha de paciente + historial clínico (no bloqueante)
     try {
