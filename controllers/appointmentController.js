@@ -319,11 +319,12 @@ const updateAppointment = async (req, res) => {
         }
 
         // Buscar datos del paciente y médico para el correo (no bloqueante)
+        const emailFn = state === "Cancelada" ? sendEmailDeleteAppointment : sendEmailUpdateAppointment;
         Promise.all([
             User.findById(appointment.user).select("email nombres primerApellido"),
             appointment.doctor ? Doctor.findById(appointment.doctor).select("name contactInfo") : Promise.resolve(null),
         ]).then(([apptUser, apptDoctor]) =>
-            sendEmailUpdateAppointment({
+            emailFn({
                 date: formatDate(result.date),
                 time: result.time,
                 userEmail: apptUser?.email,
@@ -331,7 +332,7 @@ const updateAppointment = async (req, res) => {
                 doctorEmail: apptDoctor?.contactInfo?.email,
                 doctorName: apptDoctor?.name,
             })
-        ).catch(err => console.error("Error al enviar email de actualización:", err));
+        ).catch(err => console.error("Error al enviar email de cita:", err));
 
         res.json({ msg: "Cita actualizada correctamente" });
     } catch (error) {
