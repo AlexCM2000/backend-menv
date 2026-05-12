@@ -18,6 +18,7 @@ import exportRoutes from "./routes/exportRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
+import { scheduleReminderJob } from "./jobs/appointmentReminderJob.js";
 
 //variables de entorno
 dotenv.config();
@@ -66,4 +67,5 @@ const PORT = process.env.PORT || 4000;
 
 app.listen(PORT, () => {
   console.log(colors.blue("El servidor se ejecuta en:", PORT));
+  scheduleReminderJob();
 });
