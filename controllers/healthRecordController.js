@@ -5,6 +5,9 @@ import Appointment from "../models/Appointment.js";
 import User from "../models/User.js";
 import AuditLog from "../models/AuditLog.js";
 import { crearAuditLog } from "../utils/auditHelper.js";
+import { checkVitalSignAlerts } from "../utils/cdss.js";
+import CdssConfig from "../models/CdssConfig.js";
+import { generateHealthRecordPDF } from "../utils/healthRecordPDF.js";
 import mongoose from "mongoose";
 import paginate from "../utils/pagination.js";
 import dayjs from "dayjs";
@@ -227,7 +230,8 @@ export const getHealthRecord = async (req, res) => {
     }
 
     const record = await HealthRecord.findById(id)
-      .populate("patient", "primerApellido segundoApellido nombres susCode dateOfBirth gender contactInfo emergencyContact medicalConditions allergies")
+      .populate("patient", "primerApellido segundoApellido nombres susCode dateOfBirth gender contactInfo emergencyContact medicalConditions allergies healthCenter")
+      .populate({ path: "patient", populate: { path: "healthCenter", select: "name" } })
       .populate({
         path: "medicalAppointments",
         select: "date time state services doctor notes",
@@ -236,13 +240,15 @@ export const getHealthRecord = async (req, res) => {
           { path: "doctor", select: "name specialty" },
         ],
       })
-      .populate("diagnoses.createdBy", "primerApellido segundoApellido nombres")
-      .populate("diagnoses.doctor", "name specialty")
-      .populate("observations.createdBy", "primerApellido segundoApellido nombres")
-      .populate("observations.doctor", "name specialty")
-      .populate("medications.createdBy", "primerApellido segundoApellido nombres")
+      .populate("diagnoses.createdBy",          "primerApellido segundoApellido nombres")
+      .populate("diagnoses.doctor",             "name specialty")
+      .populate("observations.createdBy",       "primerApellido segundoApellido nombres")
+      .populate("observations.doctor",          "name specialty")
+      .populate("medications.createdBy",        "primerApellido segundoApellido nombres")
       .populate("previousTreatments.createdBy", "primerApellido segundoApellido nombres")
-      .populate("allergyHistory.createdBy", "primerApellido segundoApellido nombres");
+      .populate("allergyHistory.createdBy",     "primerApellido segundoApellido nombres")
+      .populate("vitalSigns.createdBy",         "primerApellido segundoApellido nombres")
+      .populate("vaccines.createdBy",           "primerApellido segundoApellido nombres");
 
     if (!record) return res.status(404).json({ message: "No encontrado." });
 
@@ -345,6 +351,155 @@ export const addDiagnosis = addSubdoc("diagnoses");
 export const addPreviousTreatment = addSubdoc("previousTreatments");
 export const addMedication = addSubdoc("medications");
 export const addAllergy = addSubdoc("allergyHistory");
+
+/**
+ * POST /health-records/:id/vital-signs
+ * Agrega una entrada de signos vitales con verificación CDSS.
+ */
+export const addVitalSigns = async (req, res) => {
+  try {
+    if (!canWriteClinical(req.user)) {
+      return res.status(403).json({ message: "No autorizado." });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID no válido." });
+    }
+
+    const record = await HealthRecord.findById(id);
+    if (!record) return res.status(404).json({ message: "No encontrado." });
+    if (record.archivedAt) {
+      return res.status(400).json({ message: "No se puede agregar entradas a un historial archivado." });
+    }
+
+    const { systolicBP, diastolicBP, heartRate, temperature,
+            oxygenSaturation, weight, notes, date } = req.body;
+
+    // Al menos un signo vital es requerido
+    const hasValue = [systolicBP, diastolicBP, heartRate,
+                      temperature, oxygenSaturation, weight]
+                      .some((v) => v !== null && v !== undefined && v !== "");
+    if (!hasValue) {
+      return res.status(400).json({ message: "Ingrese al menos un signo vital." });
+    }
+
+    const entry = {
+      date:             date ? new Date(date) : new Date(),
+      systolicBP:       systolicBP       ?? null,
+      diastolicBP:      diastolicBP      ?? null,
+      heartRate:        heartRate        ?? null,
+      temperature:      temperature      ?? null,
+      oxygenSaturation: oxygenSaturation ?? null,
+      weight:           weight           ?? null,
+      notes:            notes            ?? "",
+      createdBy:        req.user._id,
+    };
+
+    record.vitalSigns.push(entry);
+    await record.save();
+
+    // CDSS: calcular alertas con umbrales configurados en BD
+    const cdssConfig = await CdssConfig.getOrCreate();
+    const alerts = checkVitalSignAlerts(entry, cdssConfig.vitalSigns);
+
+    return res.status(201).json({ record, alerts });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error al guardar signos vitales." });
+  }
+};
+
+/**
+ * POST /health-records/:id/vaccines
+ * Agrega un registro de vacuna.
+ */
+export const addVaccine = async (req, res) => {
+  try {
+    if (!canWriteClinical(req.user)) {
+      return res.status(403).json({ message: "No autorizado." });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID no válido." });
+    }
+
+    const record = await HealthRecord.findById(id);
+    if (!record) return res.status(404).json({ message: "No encontrado." });
+    if (record.archivedAt) {
+      return res.status(400).json({ message: "No se puede agregar entradas a un historial archivado." });
+    }
+
+    const { name, doseNumber, lot, date, appliedBy, notes } = req.body;
+    if (!name?.trim()) {
+      return res.status(400).json({ message: "El nombre de la vacuna es obligatorio." });
+    }
+
+    const entry = {
+      name:       name.trim(),
+      doseNumber: doseNumber ?? "",
+      lot:        lot        ?? "",
+      date:       date ? new Date(date) : new Date(),
+      appliedBy:  appliedBy  ?? "",
+      notes:      notes      ?? "",
+      createdBy:  req.user._id,
+    };
+
+    record.vaccines.push(entry);
+    await record.save();
+
+    return res.status(201).json(record);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error al guardar vacuna." });
+  }
+};
+
+/**
+ * GET /health-records/:id/report
+ * Genera y descarga el PDF formal del historial clínico.
+ * Acceso: admin, branchManager, doctor
+ */
+export const exportHealthRecordPDF = async (req, res) => {
+  try {
+    if (!req.user || !canWriteClinical(req.user)) {
+      return res.status(403).json({ message: "No autorizado." });
+    }
+
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ message: "ID no válido." });
+    }
+
+    const record = await HealthRecord.findById(id)
+      .populate("patient", "primerApellido segundoApellido nombres susCode dateOfBirth gender email contactInfo emergencyContact medicalConditions allergies healthCenter")
+      .populate({ path: "patient", populate: { path: "healthCenter", select: "name" } })
+      .populate({ path: "medicalAppointments", select: "date time state services doctor", populate: [{ path: "services", select: "name" }, { path: "doctor", select: "name specialty" }] })
+      .populate("diagnoses.createdBy",          "primerApellido nombres")
+      .populate("diagnoses.doctor",             "name specialty")
+      .populate("observations.createdBy",       "primerApellido nombres")
+      .populate("medications.createdBy",        "primerApellido nombres")
+      .populate("previousTreatments.createdBy", "primerApellido nombres")
+      .populate("allergyHistory.createdBy",     "primerApellido nombres")
+      .populate("vitalSigns.createdBy",         "primerApellido nombres")
+      .populate("vaccines.createdBy",           "primerApellido nombres");
+
+    if (!record) return res.status(404).json({ message: "No encontrado." });
+
+    const patFullName = [record.patient?.primerApellido, record.patient?.segundoApellido, record.patient?.nombres]
+      .filter(Boolean).join("_").replace(/\s+/g, "_") || "historial";
+
+    const buffer = await generateHealthRecordPDF(record);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="historial_${patFullName}_${dayjs().format("YYYYMMDD")}.pdf"`);
+    return res.send(buffer);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "Error al generar el reporte." });
+  }
+};
 
 /**
  * PATCH /health-records/:id/state

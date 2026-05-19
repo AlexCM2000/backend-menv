@@ -10,6 +10,9 @@ import {
   addPreviousTreatment,
   addMedication,
   addAllergy,
+  addVitalSigns,
+  addVaccine,
+  exportHealthRecordPDF,
   updateRecordState,
   archiveRecord,
   unarchiveHealthRecord,
@@ -17,32 +20,22 @@ import {
 
 const router = express.Router();
 
-// Listado paginado
 router.get("/", authMiddleware, getHealthRecords);
-
-// Crear nuevo historial
 router.post("/", authMiddleware, createHealthRecord);
-
-// Obtener historial por cita (debe ir antes de /:id)
 router.get("/by-appointment/:appointmentId", authMiddleware, getHealthRecordByAppointment);
+router.get("/:id/report", authMiddleware, exportHealthRecordPDF);
+router.get("/:id",        authMiddleware, getHealthRecord);
 
-// Detalle de historial por ID (protegido con auth)
-router.get("/:id", authMiddleware, getHealthRecord);
-
-// Agregar subdocumentos clínicos
-router.post("/:id/observations", authMiddleware, addObservation);
-router.post("/:id/diagnoses", authMiddleware, addDiagnosis);
+router.post("/:id/observations",        authMiddleware, addObservation);
+router.post("/:id/diagnoses",           authMiddleware, addDiagnosis);
 router.post("/:id/previous-treatments", authMiddleware, addPreviousTreatment);
-router.post("/:id/medications", authMiddleware, addMedication);
-router.post("/:id/allergies", authMiddleware, addAllergy);
+router.post("/:id/medications",         authMiddleware, addMedication);
+router.post("/:id/allergies",           authMiddleware, addAllergy);
+router.post("/:id/vital-signs",         authMiddleware, addVitalSigns);
+router.post("/:id/vaccines",            authMiddleware, addVaccine);
 
-// Cambiar estado (activo / en tratamiento / cerrado)
-router.patch("/:id/state", authMiddleware, updateRecordState);
-
-// Archivar (soft delete)
-router.delete("/:id", authMiddleware, archiveRecord);
-
-// Desarchivar
+router.patch("/:id/state",     authMiddleware, updateRecordState);
+router.delete("/:id",          authMiddleware, archiveRecord);
 router.patch("/:id/unarchive", authMiddleware, unarchiveHealthRecord);
 
 export default router;

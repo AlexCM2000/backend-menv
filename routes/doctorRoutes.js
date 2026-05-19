@@ -8,6 +8,7 @@ import {
   updateDoctor,
   toggleDoctorStatus,
 } from "../controllers/DoctorController.js";
+import { getSchedules, saveSchedules } from "../controllers/doctorScheduleController.js";
 
 const router = express.Router();
 
@@ -24,5 +25,8 @@ router.route("/:id")
   .put(authMiddleware, updateDoctor);
 
 router.patch("/:id/toggle-status", authMiddleware, toggleDoctorStatus);
+
+router.get("/:id/schedules", authMiddleware, getSchedules);
+router.put("/:id/schedules", authMiddleware, saveSchedules);
 
 export default router;

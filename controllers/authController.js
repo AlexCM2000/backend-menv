@@ -248,7 +248,6 @@ const userAccount = async (req, res) => {
   try {
     const userId = req.params._id;
     const user = await User.findById(userId)
-      .populate("susCode") // ahora populamos por susCode
       .populate("health");
     if (!user) {
       return res.status(404).json({ msg: "El usuario no existe" });

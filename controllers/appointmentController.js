@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import Doctor from "../models/Doctor.js";
 import Patient from "../models/Patient.js";
 import HealthRecord from "../models/HealthRecord.js";
+import DoctorSchedule from "../models/DoctorSchedule.js";
 import { parse, formatISO, startOfDay, endOfDay, isValid } from "date-fns";
 import { formatDate, handleNotFoundError, validateObjectId } from "../utils/index.js";
 import { sendEmailDeleteAppointment, sendEmailNewAppointment, sendEmailUpdateAppointment } from "../emails/appointmentEmailService.js";
@@ -54,48 +55,28 @@ const createAppointment = async (req, res) => {
     // Determinar el médico a asignar
     let doctorToAssign = req.body.doctor || null;
 
-    if (doctorToAssign) {
-        // Médico específico: verificar que no esté duplicado
-        const existing = await Appointment.findOne({
-            doctor: doctorToAssign,
-            time,
-            date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) }
-        });
-        if (existing) {
-            return res.status(409).json({ msg: "Este médico ya tiene una cita en este horario. Selecciona otro médico u otro horario." });
-        }
-    } else {
-        // Sin médico: auto-asignar de la categoría del servicio
-        if (req.body.services && req.body.services.length > 0) {
-            const ServicesModel = (await import("../models/Services.js")).default;
-            const service = await ServicesModel.findById(req.body.services[0]);
-            if (service?.category) {
-                const availableDoctors = await Doctor.find({
-                    health: healthId,
-                    specialty: service.category,
-                    active: true
-                });
+    const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const apptDayName = DAY_NAMES[normalizedDate.getDay()];
+    const isMorningSlot = parseInt(time.split(':')[0]) < 13;
 
-                if (availableDoctors.length === 0) {
-                    return res.status(409).json({ msg: `No hay médicos disponibles para la especialidad "${service.category}" en este centro de salud.` });
-                }
+    if (!doctorToAssign) {
+        return res.status(400).json({ msg: "El médico es obligatorio para crear una cita." });
+    }
 
-                // Médicos ya ocupados en este horario
-                const bookedAppointments = await Appointment.find({
-                    health: healthId,
-                    time,
-                    date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) },
-                    doctor: { $ne: null }
-                }).select("doctor");
-                const bookedDoctorIds = bookedAppointments.map(a => a.doctor.toString());
-                const freeDoctors = availableDoctors.filter(d => !bookedDoctorIds.includes(d._id.toString()));
+    // Validar que el médico trabaja en este día/turno según su horario
+    const schedule = await DoctorSchedule.findOne({ doctor: doctorToAssign, dayOfWeek: apptDayName, active: true });
+    if (!schedule || (isMorningSlot && !schedule.morning) || (!isMorningSlot && !schedule.afternoon)) {
+        return res.status(409).json({ msg: 'El médico no trabaja en este día/turno según su horario configurado.' });
+    }
 
-                if (freeDoctors.length === 0) {
-                    return res.status(409).json({ msg: "No hay médicos disponibles en este horario para esta especialidad." });
-                }
-                doctorToAssign = freeDoctors[0]._id;
-            }
-        }
+    // Verificar que no esté duplicado
+    const existing = await Appointment.findOne({
+        doctor: doctorToAssign,
+        time,
+        date: { $gte: startOfDay(normalizedDate), $lte: endOfDay(normalizedDate) }
+    });
+    if (existing) {
+        return res.status(409).json({ msg: "Este médico ya tiene una cita en este horario. Selecciona otro médico u otro horario." });
     }
 
     const newAppointmentData = {
@@ -166,38 +147,71 @@ const getAppointmentDate = async (req, res) => {
 
 const getAvailability = async (req, res) => {
     try {
-        const { date, category, excludeId } = req.query;
+        const { date, category, excludeId, doctorId } = req.query;
         if (!date) return res.status(400).json({ msg: "date es requerido" });
 
         const newDate = parse(date, "dd/MM/yyyy", new Date());
         if (!isValid(newDate)) return res.status(400).json({ msg: "Fecha inválida" });
 
         const healthId = req.user.health;
+        const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const dayName = DAY_NAMES[newDate.getDay()];
 
-        // Médicos activos de esa especialidad en el centro (solo si se indica categoría)
-        const doctors = category
+        // Todos los médicos activos de la categoría en el centro
+        const allCategoryDoctors = category
             ? await Doctor.find({ health: healthId, specialty: category, active: true }).select("_id name specialty")
             : [];
 
-        // Citas en ese centro ese día
+        let doctors = [];
+        let shiftInfo = null;
+
+        if (allCategoryDoctors.length > 0) {
+            const doctorIds = allCategoryDoctors.map(d => d._id);
+
+            // Médicos con horario activo hoy (mañana y/o tarde)
+            const [morningIds, afternoonIds, workingTodayIds] = await Promise.all([
+                DoctorSchedule.distinct('doctor', { doctor: { $in: doctorIds }, dayOfWeek: dayName, active: true, morning: true }),
+                DoctorSchedule.distinct('doctor', { doctor: { $in: doctorIds }, dayOfWeek: dayName, active: true, afternoon: true }),
+                DoctorSchedule.distinct('doctor', { doctor: { $in: doctorIds }, dayOfWeek: dayName, active: true, $or: [{ morning: true }, { afternoon: true }] }),
+            ]);
+
+            // Solo médicos que trabajan hoy cuentan para la capacidad por slot
+            doctors = allCategoryDoctors.filter(d =>
+                workingTodayIds.some(id => id.toString() === d._id.toString())
+            );
+
+            if (doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
+                // shiftInfo del médico específico seleccionado
+                const schedule = await DoctorSchedule.findOne({ doctor: doctorId, dayOfWeek: dayName, active: true });
+                shiftInfo = schedule
+                    ? { morning: schedule.morning, afternoon: schedule.afternoon }
+                    : { morning: false, afternoon: false }; // Sin horario activo = sin disponibilidad
+            } else {
+                // shiftInfo agregado: ¿hay algún médico que trabaje mañana/tarde hoy?
+                shiftInfo = {
+                    morning: morningIds.length > 0,
+                    afternoon: afternoonIds.length > 0,
+                };
+            }
+        }
+
+        // Citas del día filtradas por los médicos efectivos (los que trabajan hoy)
         const isoDate = formatISO(newDate);
         const appointmentQuery = {
             health: healthId,
-            date: { $gte: startOfDay(new Date(isoDate)), $lte: endOfDay(new Date(isoDate)) }
+            date: { $gte: startOfDay(new Date(isoDate)), $lte: endOfDay(new Date(isoDate)) },
         };
-        // Excluir la cita actual si se está editando
         if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
             appointmentQuery._id = { $ne: excludeId };
         }
-        // Si hay categoría, filtrar citas solo de médicos de esa especialidad
-        // Esto evita que citas de otras especialidades bloqueen horarios incorrectamente
         if (doctors.length > 0) {
             appointmentQuery.doctor = { $in: doctors.map(d => d._id) };
         }
+        const appointments = doctors.length > 0
+            ? await Appointment.find(appointmentQuery).select("time doctor")
+            : [];
 
-        const appointments = await Appointment.find(appointmentQuery).select("time doctor");
-
-        return res.json({ doctors, appointments });
+        return res.json({ doctors, appointments, shiftInfo });
     } catch (error) {
         console.error(error);
         return res.status(500).json({ msg: "Error al obtener disponibilidad" });
@@ -268,6 +282,19 @@ const updateAppointment = async (req, res) => {
     const newDate = date ? startOfDay(new Date(date)) : startOfDay(new Date(appointment.date));
     const newTime = time || appointment.time;
     const newDoctor = doctor !== undefined ? (doctor || null) : appointment.doctor;
+
+    // Validar horario del médico si se está cambiando fecha, hora o médico
+    const scheduleRelevant = date || time || doctor !== undefined;
+    if (newDoctor && scheduleRelevant) {
+        const DAY_NAMES_UPD = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const apptDayNameUpd = DAY_NAMES_UPD[newDate.getDay()];
+        const isMorningSlotUpd = parseInt(newTime.split(':')[0]) < 13;
+        const scheduleUpd = await DoctorSchedule.findOne({ doctor: newDoctor, dayOfWeek: apptDayNameUpd, active: true });
+        if (!scheduleUpd || (isMorningSlotUpd && !scheduleUpd.morning) || (!isMorningSlotUpd && !scheduleUpd.afternoon)) {
+            return res.status(409).json({ msg: 'El médico no trabaja en este día/turno según su horario configurado.' });
+        }
+    }
+
     if (newDoctor) {
         const conflict = await Appointment.findOne({
             _id: { $ne: id },

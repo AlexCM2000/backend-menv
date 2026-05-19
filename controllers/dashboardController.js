@@ -2,6 +2,7 @@ import Appointment from "../models/Appointment.js";
 import Patient from "../models/Patient.js";
 import Doctor from "../models/Doctor.js";
 import User from "../models/User.js";
+import Stock from "../models/Stock.js";
 import mongoose from "mongoose";
 
 const getDashboardStats = async (req, res) => {
@@ -188,6 +189,20 @@ const getDashboardStats = async (req, res) => {
       },
     ]);
 
+    // Alertas de stock bajo mínimo (solo farmacéutico y branchManager)
+    let stockAlerts = [];
+    const needsStockAlerts = req.user.pharmacist || req.user.branchManager;
+    if (needsStockAlerts && req.user.health) {
+      stockAlerts = await Stock.find({
+        health: new mongoose.Types.ObjectId(String(req.user.health)),
+        active: true,
+        $expr: { $lte: ["$availableQuantity", "$minimumQuantity"] },
+      })
+        .select("name availableQuantity minimumQuantity unit category")
+        .sort({ availableQuantity: 1 })
+        .lean();
+    }
+
     res.json({
       isDoctor,
       kpis: {
@@ -203,6 +218,7 @@ const getDashboardStats = async (req, res) => {
       tendenciaPorDia,
       citasPorEspecialidad,
       topMedicos,
+      stockAlerts,
       range,
     });
   } catch (error) {

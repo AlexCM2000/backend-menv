@@ -18,6 +18,9 @@ import exportRoutes from "./routes/exportRoutes.js";
 import categoryRoutes from "./routes/categoryRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import auditRoutes from "./routes/auditRoutes.js";
+import cdssConfigRoutes from "./routes/cdssConfigRoute.js";
+import stockRoutes from "./routes/stockRoute.js";
+import prescriptionRoutes from "./routes/prescriptionRoute.js";
 import { scheduleReminderJob } from "./jobs/appointmentReminderJob.js";
 
 //variables de entorno
@@ -62,6 +65,9 @@ app.use("/api/export",   exportRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/audit-logs", auditRoutes);
+app.use("/api/cdss-config", cdssConfigRoutes);
+app.use("/api/stock", stockRoutes);
+app.use("/api/prescriptions", prescriptionRoutes);
 
 const PORT = process.env.PORT || 4000;
 

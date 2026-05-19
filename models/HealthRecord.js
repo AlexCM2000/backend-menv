@@ -1,14 +1,5 @@
 import mongoose from "mongoose";
 
-/**
- * HealthRecord Schema
- *
- * Representa el historial médico de un paciente.
- * - Un único registro por paciente (patient es unique).
- * - Se documentan diagnósticos, tratamientos, medicaciones, alergias y observaciones.
- * - Mantiene trazabilidad con quién y cuándo creó cada entrada.
- * - No se eliminan registros: se archivan con archivedAt.
- */
 const healthRecordSchema = new mongoose.Schema(
   {
     /**
@@ -42,6 +33,7 @@ const healthRecordSchema = new mongoose.Schema(
       {
         code: String,
         description: String,
+        notes: String,
         date: { type: Date, default: Date.now },
         createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         doctor: { type: mongoose.Schema.Types.ObjectId, ref: "Doctor", default: null },
@@ -102,8 +94,39 @@ const healthRecordSchema = new mongoose.Schema(
     ],
 
     /**
+     * Signos vitales registrados en consulta.
+     */
+    vitalSigns: [
+      {
+        date:              { type: Date, default: Date.now },
+        systolicBP:        { type: Number, default: null },   // mmHg
+        diastolicBP:       { type: Number, default: null },   // mmHg
+        heartRate:         { type: Number, default: null },   // lpm
+        temperature:       { type: Number, default: null },   // °C
+        oxygenSaturation:  { type: Number, default: null },   // %
+        weight:            { type: Number, default: null },   // kg
+        notes:             { type: String, default: "" },
+        createdBy:         { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
+
+    /**
+     * Registro de vacunas aplicadas.
+     */
+    vaccines: [
+      {
+        name:       { type: String, required: true },
+        doseNumber: { type: String, default: "" },
+        lot:        { type: String, default: "" },
+        date:       { type: Date, default: Date.now },
+        appliedBy:  { type: String, default: "" },
+        notes:      { type: String, default: "" },
+        createdBy:  { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
+
+    /**
      * Citas médicas asociadas.
-     * Relaciona con el modelo Appointment.
      */
     medicalAppointments: [
       {
@@ -112,10 +135,6 @@ const healthRecordSchema = new mongoose.Schema(
       },
     ],
 
-    /**
-     * Fecha en que el historial fue archivado.
-     * null = aún activo.
-     */
     archivedAt: { type: Date, default: null },
   },
   { timestamps: true }

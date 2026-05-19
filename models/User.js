@@ -55,6 +55,10 @@ const userSchema = mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    pharmacist: {
+      type: Boolean,
+      default: false,
+    },
     doctorProfile: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Doctor",

@@ -30,6 +30,12 @@ const formatBs = (amount) =>
 const getFormat = (req) =>
   req.query.format === "pdf" ? "pdf" : "xlsx";
 
+/** Genera archivo vacío con mensaje "Sin resultados" */
+const buildEmptyFile = (title, format) => {
+  const opts = { title, filters: "Sin resultados", columns: [], rows: [], summary: [] };
+  return format === "pdf" ? buildPDF(opts) : buildExcel(opts);
+};
+
 /** Send the generated file as a download */
 const sendFile = (res, buffer, format, filename) => {
   if (format === "pdf") {
@@ -105,13 +111,13 @@ export const exportAppointments = async (req, res) => {
       }
       if (search) {
         const empty = await applyExportSearchFilter(query, search);
-        if (empty) return sendFile(res, await buildEmptyExcel("Citas médicas", format), format, "citas_medicas");
+        if (empty) return sendFile(res, await buildEmptyFile("Citas médicas", format), format, "citas_medicas");
       }
     } else if (req.user.branchManager) {
       query.health = req.user.health;
       if (search) {
         const empty = await applyExportSearchFilter(query, search);
-        if (empty) return sendFile(res, await buildEmptyExcel("Citas médicas", format), format, "citas_medicas");
+        if (empty) return sendFile(res, await buildEmptyFile("Citas médicas", format), format, "citas_medicas");
       }
     } else {
       query = { user: req.user._id, date: { $gte: new Date() } };

@@ -5,7 +5,7 @@ import { fileURLToPath } from "url";
 import { join, dirname } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const LOGO_CLARO = join(__dirname, "../../frontend/public/img/empresa/SIGMED-PA_icono_claro_512.png");
+const LOGO_CLARO = join(__dirname, "../assets/SIGMED-PA_icono_claro_512.png");
 
 // ─── Paleta formal médica (azul marino + teal natural) ───────────────────────
 const B = {
