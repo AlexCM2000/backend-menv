@@ -47,7 +47,7 @@ const prescriptionSchema = mongoose.Schema(
     date: { type: Date, default: Date.now },
     status: {
       type: String,
-      enum: ["Pendiente", "Despachada", "Parcial"],
+      enum: ["Pendiente", "Despachada"],
       default: "Pendiente",
     },
     health: {

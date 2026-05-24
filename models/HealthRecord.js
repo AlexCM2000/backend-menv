@@ -54,20 +54,6 @@ const healthRecordSchema = new mongoose.Schema(
     ],
 
     /**
-     * Medicaciones prescritas.
-     * Incluye nombre, dosis, periodo y autor.
-     */
-    medications: [
-      {
-        name: String,
-        dose: String,
-        start: Date,
-        end: Date,
-        createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      },
-    ],
-
-    /**
      * Historial de alergias o reacciones adversas.
      * Cada registro documenta sustancia, reacción, fecha y autor.
      */

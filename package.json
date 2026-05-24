@@ -8,7 +8,9 @@
     "start": "node --watch index.js",
     "seed:import": "node data/seed.js --import",
     "seed:destroy": "node data/seed.js --destroy",
-    "db:cleanup": "node data/dropOrphanCollections.js"
+    "db:cleanup": "node data/dropOrphanCollections.js",
+    "seed:full": "node data/seed-full.js --import",
+    "seed:full:clear": "node data/seed-full.js --clear"
   },
   "author": "Alex Churata MQV",
   "license": "ISC",

@@ -455,7 +455,6 @@ export const exportHealthRecords = async (req, res) => {
       { label: "Centro de salud", key: "centro",   width: 18 },
       { label: "Estado",          key: "estado",   width: 14 },
       { label: "Diagnósticos",    key: "num_diag", width: 11 },
-      { label: "Medicaciones",    key: "num_meds", width: 11 },
       { label: "Fecha creación",  key: "creado",   width: 13 },
     ];
     const xlsxColumns = [
@@ -468,7 +467,6 @@ export const exportHealthRecords = async (req, res) => {
       { label: "Centro de salud",     key: "centro",      excelWidth: 22 },
       { label: "Estado",              key: "estado",      excelWidth: 15 },
       { label: "N° Diagnósticos",     key: "num_diag",    excelWidth: 13 },
-      { label: "N° Medicaciones",     key: "num_meds",    excelWidth: 13 },
       { label: "N° Tratamientos",     key: "num_tratos",  excelWidth: 13 },
       { label: "N° Alergias",         key: "num_alerg",   excelWidth: 11 },
       { label: "Último diagnóstico",  key: "ult_diag",    excelWidth: 30 },
@@ -491,7 +489,6 @@ export const exportHealthRecords = async (req, res) => {
         centro:      r.patient?.healthCenter?.name               ?? "—",
         estado:      r.state ? r.state.charAt(0).toUpperCase() + r.state.slice(1) : "—",
         num_diag:    r.diagnoses?.length            ?? 0,
-        num_meds:    r.medications?.length          ?? 0,
         num_tratos:  r.previousTreatments?.length   ?? 0,
         num_alerg:   r.allergyHistory?.length        ?? 0,
         ult_diag:    lastDiag
@@ -507,7 +504,6 @@ export const exportHealthRecords = async (req, res) => {
       return count > 0 ? [{ label: s, value: count }] : [];
     });
     summary.push({ label: "Total diagnósticos registrados", value: rows.reduce((s, r) => s + r.num_diag, 0) });
-    summary.push({ label: "Total medicaciones activas",     value: rows.reduce((s, r) => s + r.num_meds, 0) });
 
     const filters = buildFilterDesc([
       search     && `Búsqueda: "${search}"`,

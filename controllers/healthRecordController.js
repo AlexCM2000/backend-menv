@@ -155,7 +155,6 @@ export const createHealthRecord = async (req, res) => {
       patient: patientId,
       diagnoses = [],
       previousTreatments = [],
-      medications = [],
       allergyHistory = [],
       observations = [],
     } = req.body;
@@ -195,7 +194,6 @@ export const createHealthRecord = async (req, res) => {
     const userId = req.user._id;
     diagnoses.forEach((d) => record.diagnoses.push({ ...d, createdBy: userId }));
     previousTreatments.forEach((t) => record.previousTreatments.push({ ...t, createdBy: userId }));
-    medications.forEach((m) => record.medications.push({ ...m, createdBy: userId }));
     allergyHistory.forEach((a) => record.allergyHistory.push({ ...a, createdBy: userId }));
     observations.forEach((o) => record.observations.push({ ...o, createdBy: userId }));
 
@@ -244,7 +242,6 @@ export const getHealthRecord = async (req, res) => {
       .populate("diagnoses.doctor",             "name specialty")
       .populate("observations.createdBy",       "primerApellido segundoApellido nombres")
       .populate("observations.doctor",          "name specialty")
-      .populate("medications.createdBy",        "primerApellido segundoApellido nombres")
       .populate("previousTreatments.createdBy", "primerApellido segundoApellido nombres")
       .populate("allergyHistory.createdBy",     "primerApellido segundoApellido nombres")
       .populate("vitalSigns.createdBy",         "primerApellido segundoApellido nombres")
@@ -349,7 +346,6 @@ const addSubdoc = (field) => async (req, res) => {
 export const addObservation = addSubdoc("observations");
 export const addDiagnosis = addSubdoc("diagnoses");
 export const addPreviousTreatment = addSubdoc("previousTreatments");
-export const addMedication = addSubdoc("medications");
 export const addAllergy = addSubdoc("allergyHistory");
 
 /**
@@ -479,7 +475,6 @@ export const exportHealthRecordPDF = async (req, res) => {
       .populate("diagnoses.createdBy",          "primerApellido nombres")
       .populate("diagnoses.doctor",             "name specialty")
       .populate("observations.createdBy",       "primerApellido nombres")
-      .populate("medications.createdBy",        "primerApellido nombres")
       .populate("previousTreatments.createdBy", "primerApellido nombres")
       .populate("allergyHistory.createdBy",     "primerApellido nombres")
       .populate("vitalSigns.createdBy",         "primerApellido nombres")

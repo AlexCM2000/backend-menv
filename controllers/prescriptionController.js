@@ -256,8 +256,7 @@ export const dispenseItems = async (req, res) => {
 
     // Actualizar estado de la receta
     const allDispensed = prescription.items.every((i) => i.dispensed);
-    const anyDispensed = prescription.items.some((i) => i.quantityDispensed > 0);
-    prescription.status = allDispensed ? "Despachada" : anyDispensed ? "Parcial" : "Pendiente";
+    prescription.status = allDispensed ? "Despachada" : "Pendiente";
 
     await prescription.save();
 

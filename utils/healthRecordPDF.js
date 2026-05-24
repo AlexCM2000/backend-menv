@@ -575,19 +575,6 @@ export const generateHealthRecordPDF = (record) =>
       drawTable(dHeaders, dRows, dColW);
     }
 
-    // ── Medicaciones prescritas ───────────────────────────────────────────────
-    if (record.medications?.length) {
-      sectionTitle("Medicaciones prescritas", record.medications.length);
-
-      const mHeaders = ["Medicamento", "Dosis", "Inicio", "Fin", "Prescrito por"];
-      const mColW    = [155, 95, 55, 55, 145]; // Σ = 505
-
-      const mRows = record.medications.map((m) => [
-        m.name, m.dose, fmt(m.start), fmt(m.end), userNm(m.createdBy),
-      ]);
-      drawTable(mHeaders, mRows, mColW);
-    }
-
     // ── Historial de alergias ─────────────────────────────────────────────────
     if (record.allergyHistory?.length) {
       sectionTitle("Historial de alergias", record.allergyHistory.length);

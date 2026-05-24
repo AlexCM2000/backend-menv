@@ -8,7 +8,6 @@ import {
   addObservation,
   addDiagnosis,
   addPreviousTreatment,
-  addMedication,
   addAllergy,
   addVitalSigns,
   addVaccine,
@@ -29,7 +28,6 @@ router.get("/:id",        authMiddleware, getHealthRecord);
 router.post("/:id/observations",        authMiddleware, addObservation);
 router.post("/:id/diagnoses",           authMiddleware, addDiagnosis);
 router.post("/:id/previous-treatments", authMiddleware, addPreviousTreatment);
-router.post("/:id/medications",         authMiddleware, addMedication);
 router.post("/:id/allergies",           authMiddleware, addAllergy);
 router.post("/:id/vital-signs",         authMiddleware, addVitalSigns);
 router.post("/:id/vaccines",            authMiddleware, addVaccine);
