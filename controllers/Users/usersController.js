@@ -6,11 +6,11 @@ import { crearAuditLog, ROLE_FIELD_LABELS, boolLabel } from "../../utils/auditHe
 import paginate from "../../utils/pagination.js";
 import dayjs from "dayjs";
 import mongoose from "mongoose";
-import { uniqueId } from "../../utils/index.js";
+import { uniqueId, escapeRegex } from "../../utils/index.js";
 
-// Helper: verifica si es un ObjectId real de Mongo (24 hex chars)
-// ⚠️ mongoose.Types.ObjectId.isValid() retorna true para números enteros (bug conocido de BSON)
-//    por eso NO usamos isValid() para distinguir codigo vs _id
+// Verifica si es un ObjectId real de Mongo (24 hex chars).
+// mongoose.Types.ObjectId.isValid() retorna true para números enteros,
+// por eso no se usa para distinguir codigo vs _id.
 const isMongoObjectId = (value) =>
   typeof value === "string" && /^[a-fA-F0-9]{24}$/.test(value);
 
@@ -58,11 +58,11 @@ const getUsers = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { primerApellido: { $regex: search, $options: "i" } },
-        { segundoApellido: { $regex: search, $options: "i" } },
-        { nombres: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { susCode: { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { segundoApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { nombres: { $regex: escapeRegex(search), $options: "i" } },
+        { email: { $regex: escapeRegex(search), $options: "i" } },
+        { susCode: { $regex: escapeRegex(search), $options: "i" } },
       ];
     }
 

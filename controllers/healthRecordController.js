@@ -5,6 +5,7 @@ import Appointment from "../models/Appointment.js";
 import User from "../models/User.js";
 import AuditLog from "../models/AuditLog.js";
 import { crearAuditLog } from "../utils/auditHelper.js";
+import { escapeRegex } from "../utils/index.js";
 import { checkVitalSignAlerts } from "../utils/cdss.js";
 import CdssConfig from "../models/CdssConfig.js";
 import { generateHealthRecordPDF } from "../utils/healthRecordPDF.js";
@@ -98,10 +99,10 @@ export const getHealthRecords = async (req, res) => {
 
     if (search) {
       patientFilter.$or = [
-        { primerApellido: { $regex: search, $options: "i" } },
-        { segundoApellido: { $regex: search, $options: "i" } },
-        { nombres: { $regex: search, $options: "i" } },
-        { susCode: { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { segundoApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { nombres: { $regex: escapeRegex(search), $options: "i" } },
+        { susCode: { $regex: escapeRegex(search), $options: "i" } },
       ];
       needsPatientLookup = true;
     }

@@ -1,6 +1,6 @@
 import Services from "../models/Services.js";
 import Appointment from "../models/Appointment.js";
-import { handleNotFoundError, validateObjectId } from "../utils/index.js";
+import { handleNotFoundError, validateObjectId, escapeRegex } from "../utils/index.js";
 import paginate from "../utils/pagination.js";
 
 const createService = async (req, res) => {
@@ -39,7 +39,7 @@ const getServicesPaginated = async (req, res) => {
     const query = {};
 
     if (search && search.trim() !== "") {
-      query.name = { $regex: search.trim(), $options: "i" };
+      query.name = { $regex: escapeRegex(search.trim()), $options: "i" };
     }
     if (category && category.trim() !== "") {
       query.category = category.trim();

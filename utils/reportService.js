@@ -7,7 +7,7 @@ import { join, dirname } from "path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const LOGO_CLARO = join(__dirname, "../assets/SIGMED-PA_icono_claro_512.png");
 
-// ─── Paleta formal médica (azul marino + teal natural) ───────────────────────
+// Paleta de colores
 const B = {
   primary:     "#1A3C5E",  // azul marino profundo — barra, cabeceras de tabla
   primaryDark: "#112B44",  // azul marino oscuro   — bordes de cabecera
@@ -22,7 +22,7 @@ const B = {
   sumHeaderBg: "#D4EDE8",  // teal claro           — fondo fila "RESUMEN" (Excel)
 };
 
-// ─── Helper: Excel column letter ─────────────────────────────────────────────
+// Convierte número de columna a letra (A, B, ..., Z, AA, ...)
 function colLetter(n) {
   let r = "";
   while (n > 0) {
@@ -33,9 +33,6 @@ function colLetter(n) {
   return r;
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  BUILD EXCEL
-// ═══════════════════════════════════════════════════════════════════════════════
 export const buildExcel = async ({ title, filters, columns, rows, summary }) => {
   const wb = new ExcelJS.Workbook();
   wb.creator = "SIGMED-PA";
@@ -48,7 +45,7 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
 
   const lastCol = colLetter(columns.length);
 
-  // ── Fila 1: Título ──────────────────────────────────────────────────────────
+  // Fila 1: Título
   ws.mergeCells(`A1:${lastCol}1`);
   const titleCell = ws.getCell("A1");
   titleCell.value = title;
@@ -57,7 +54,7 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
   titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFDCE8F0" } };
   ws.getRow(1).height = 32;
 
-  // ── Fila 2: Generado + total ────────────────────────────────────────────────
+  // Fila 2: Generado + total
   ws.mergeCells(`A2:${lastCol}2`);
   const metaCell = ws.getCell("A2");
   metaCell.value = `Generado: ${dayjs().format("DD/MM/YYYY HH:mm")}   |   Total registros: ${rows.length}   |   SIGMED-PA`;
@@ -66,7 +63,7 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
   metaCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F8FA" } };
   ws.getRow(2).height = 17;
 
-  // ── Fila 3: Filtros ─────────────────────────────────────────────────────────
+  // Fila 3: Filtros
   ws.mergeCells(`A3:${lastCol}3`);
   const filterCell = ws.getCell("A3");
   filterCell.value = `Filtros aplicados: ${filters}`;
@@ -75,10 +72,10 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
   filterCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF5F8FA" } };
   ws.getRow(3).height = 15;
 
-  // ── Fila 4: Espaciador ──────────────────────────────────────────────────────
+  // Fila 4: Espaciador
   ws.getRow(4).height = 5;
 
-  // ── Fila 5: Cabeceras ───────────────────────────────────────────────────────
+  // Fila 5: Cabeceras
   const headerRow = ws.getRow(5);
   columns.forEach((col, i) => {
     const cell = headerRow.getCell(i + 1);
@@ -95,7 +92,7 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
   });
   headerRow.height = 22;
 
-  // ── Filas 6+: Datos ─────────────────────────────────────────────────────────
+  // Filas 6+: Datos
   rows.forEach((row, rowIdx) => {
     const dataRow = ws.getRow(6 + rowIdx);
     const isAlt = rowIdx % 2 === 1;
@@ -115,7 +112,7 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
     dataRow.height = 16;
   });
 
-  // ── Resumen ─────────────────────────────────────────────────────────────────
+  // Resumen
   if (summary?.length > 0) {
     const startRow = 6 + rows.length + 2;
 
@@ -141,20 +138,17 @@ export const buildExcel = async ({ title, filters, columns, rows, summary }) => 
     });
   }
 
-  // ── Anchos de columna ───────────────────────────────────────────────────────
+  // Anchos de columna
   columns.forEach((col, i) => {
     ws.getColumn(i + 1).width = col.excelWidth ?? 16;
   });
 
-  // ── AutoFilter ──────────────────────────────────────────────────────────────
+  // AutoFilter
   ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: columns.length } };
 
   return wb.xlsx.writeBuffer();
 };
 
-// ═══════════════════════════════════════════════════════════════════════════════
-//  BUILD PDF
-// ═══════════════════════════════════════════════════════════════════════════════
 export const buildPDF = ({ title, filters, columns, rows, summary }) => {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -177,7 +171,7 @@ export const buildPDF = ({ title, filters, columns, rows, summary }) => {
     const pageBottom = pageH - 45;
     let pageNum = 0;
 
-    // ── Logo + header bar ────────────────────────────────────────────────────
+    // Logo + barra de encabezado
     const drawPageHeader = () => {
       pageNum++;
       // Barra de fondo: azul marino profundo
@@ -204,7 +198,7 @@ export const buildPDF = ({ title, filters, columns, rows, summary }) => {
       doc.y = 65;
     };
 
-    // ── Primera página ───────────────────────────────────────────────────────
+    // Primera página
     drawPageHeader();
 
     // Título del reporte
@@ -226,7 +220,7 @@ export const buildPDF = ({ title, filters, columns, rows, summary }) => {
       .text(`Filtros: ${filters}`, margin, doc.y, { width: contentW });
     doc.moveDown(0.7);
 
-    // ── Tabla ────────────────────────────────────────────────────────────────
+    // Tabla
     const TH = 22;  // header height
     const TR = 17;  // row height
     const TP = { l: 4, t: 5 };
@@ -283,7 +277,7 @@ export const buildPDF = ({ title, filters, columns, rows, summary }) => {
       y = drawRow(row, y, idx % 2 === 1);
     });
 
-    // ── Resumen ──────────────────────────────────────────────────────────────
+    // Resumen
     if (summary?.length > 0) {
       const boxH = 22 + summary.length * 15 + 8;
       if (y + boxH + 16 > pageBottom) {

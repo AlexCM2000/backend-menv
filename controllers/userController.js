@@ -2,10 +2,11 @@ import Appointment from "../models/Appointment.js"
 import Health from "../models/HealthCenter.js";
 import User from "../models/User.js";
 import Patient from "../models/Patient.js";
+import { escapeRegex } from "../utils/index.js";
 
 // Busca citas por nombre buscando en User Y Patient (para citas sin cuenta de usuario)
 const applySearchFilter = async (query, searchName) => {
-    const nameRegex = { $regex: searchName, $options: "i" };
+    const nameRegex = { $regex: escapeRegex(searchName), $options: "i" };
     const nameCondition = [
         { primerApellido: nameRegex },
         { segundoApellido: nameRegex },

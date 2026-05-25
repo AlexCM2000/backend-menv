@@ -92,11 +92,9 @@ const createAppointment = async (req, res) => {
     };
 
     // Guardar con manejo de race condition (índice único)
-    console.log("[createAppointment] newAppointmentData:", JSON.stringify({ user: newAppointmentData.user, patient: newAppointmentData.patient, health: newAppointmentData.health?.toString() }));
     const newAppointment = new Appointment(newAppointmentData);
     try {
         const result = await newAppointment.save();
-        console.log("[createAppointment] saved _id:", result._id, "patient:", result.patient, "user:", result.user);
         // Buscar datos del paciente y médico para el correo (no bloqueante)
         Promise.all([
             User.findById(appointmentUserId).select("email nombres primerApellido"),
@@ -116,7 +114,7 @@ const createAppointment = async (req, res) => {
         if (saveError.code === 11000) {
             return res.status(409).json({ msg: "Este horario fue tomado en el último momento. Por favor selecciona otro horario." });
         }
-        console.log(saveError);
+        console.error(saveError);
         return res.status(500).json({ msg: "Error al crear la cita" });
     }
 }
@@ -140,7 +138,7 @@ const getAppointmentDate = async (req, res) => {
         const appointments = await Appointment.find(query).select("time doctor");
         return res.json(appointments);
     } catch (error) {
-        console.log(error);
+        console.error(error);
         return res.status(500).json({ message: "Error al obtener citas" });
     }
 };
@@ -269,7 +267,7 @@ const updateAppointment = async (req, res) => {
         return res.status(400).json({ msg: `El estado '${state}' no es válido. Los estados permitidos son: ${validStates.join(', ')}` });
     }
 
-    // Bug 26: Validar 24h de anticipación para cancelación por usuario regular
+    // No permitir cancelación con menos de 24h de anticipación para usuarios regulares
     if (!isStaff && state === "Cancelada") {
         const apptDate = startOfDay(new Date(appointment.date));
         const cutoff = new Date(Date.now() + 24 * 60 * 60 * 1000);
@@ -363,7 +361,7 @@ const updateAppointment = async (req, res) => {
 
         res.json({ msg: "Cita actualizada correctamente" });
     } catch (error) {
-        console.log(error);
+        console.error(error);
         if (error.code === 11000) {
             return res.status(409).json({ msg: "El médico ya tiene una cita en ese horario. Selecciona otro horario o médico." });
         }
@@ -412,7 +410,7 @@ const deleteAppointment = async (req, res) => {
         res.json({ msg: "Cita eliminada correctamente" });
 
     } catch (error) {
-        console.log(error);
+        console.error(error);
         res.status(500).json({ msg: "Error al eliminar la cita" });
     }
 }
@@ -456,7 +454,7 @@ const getCalendarAppointments = async (req, res) => {
 
         res.json(appointments);
     } catch (error) {
-        console.log(error);
+        console.error(error);
         res.status(500).json({ msg: "Error al obtener las citas del calendario" });
     }
 }

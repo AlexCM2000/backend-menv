@@ -3,6 +3,7 @@ import HealthCenter from "../models/HealthCenter.js";
 import paginate from "../utils/pagination.js";
 import mongoose from "mongoose";
 import dayjs from "dayjs";
+import { escapeRegex } from "../utils/index.js";
 
 const isMongoObjectId = (value) =>
   typeof value === "string" && /^[a-fA-F0-9]{24}$/.test(value);
@@ -46,9 +47,9 @@ const getDoctors = async (req, res) => {
 
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { specialty: { $regex: search, $options: "i" } },
-        { licenseNumber: { $regex: search, $options: "i" } },
+        { name: { $regex: escapeRegex(search), $options: "i" } },
+        { specialty: { $regex: escapeRegex(search), $options: "i" } },
+        { licenseNumber: { $regex: escapeRegex(search), $options: "i" } },
       ];
     }
 

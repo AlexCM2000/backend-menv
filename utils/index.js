@@ -32,4 +32,6 @@ const formatDate = (date) => {
   return format(new Date(date), "dd 'de' MMMM 'de' yyyy", { locale: es });
 };
 
-export { validateObjectId, handleNotFoundError,uniqueId,generateJWT,formatDate };
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+export { validateObjectId, handleNotFoundError, uniqueId, generateJWT, formatDate, escapeRegex };

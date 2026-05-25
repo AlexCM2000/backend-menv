@@ -1,8 +1,8 @@
 import Prescription from "../models/Prescription.js";
 import Stock from "../models/Stock.js";
 import mongoose from "mongoose";
+import { escapeRegex } from "../utils/index.js";
 
-/* ─── Genera código único de receta ─────────────────────────── */
 const generateCode = () => {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const suffix = Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
@@ -11,7 +11,6 @@ const generateCode = () => {
   return `RX-${datePart}-${suffix}`;
 };
 
-/* ─── GET /api/prescriptions ─────────────────────────────────── */
 export const getPrescriptions = async (req, res) => {
   try {
     const { search, status, patient, page = 1, page_size = 20 } = req.query;
@@ -34,7 +33,7 @@ export const getPrescriptions = async (req, res) => {
 
     if (search) {
       filter.$or = [
-        { code: { $regex: search, $options: "i" } },
+        { code: { $regex: escapeRegex(search), $options: "i" } },
       ];
     }
 
@@ -61,7 +60,6 @@ export const getPrescriptions = async (req, res) => {
   }
 };
 
-/* ─── GET /api/prescriptions/:id ────────────────────────────── */
 export const getPrescriptionById = async (req, res) => {
   try {
     const prescription = await Prescription.findById(req.params.id)
@@ -85,7 +83,6 @@ export const getPrescriptionById = async (req, res) => {
   }
 };
 
-/* ─── GET /api/prescriptions/patient/:patientId ─────────────── */
 export const getPrescriptionsByPatient = async (req, res) => {
   try {
     const { patientId } = req.params;
@@ -103,7 +100,6 @@ export const getPrescriptionsByPatient = async (req, res) => {
   }
 };
 
-/* ─── POST /api/prescriptions ────────────────────────────────── */
 export const createPrescription = async (req, res) => {
   try {
     const canCreate = req.user.admin || req.user.branchManager || req.user.doctor;
@@ -175,7 +171,6 @@ export const createPrescription = async (req, res) => {
   }
 };
 
-/* ─── DELETE /api/prescriptions/:id ─────────────────────────── */
 export const deletePrescription = async (req, res) => {
   try {
     const canDelete = req.user.admin || req.user.branchManager || req.user.doctor;
@@ -199,7 +194,6 @@ export const deletePrescription = async (req, res) => {
   }
 };
 
-/* ─── PUT /api/prescriptions/:id/dispense ───────────────────── */
 export const dispenseItems = async (req, res) => {
   try {
     const canDispense = req.user.admin || req.user.branchManager || req.user.pharmacist;

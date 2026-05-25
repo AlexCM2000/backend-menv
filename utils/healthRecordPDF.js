@@ -25,7 +25,6 @@ const fullNm = (p) => p ? [p.primerApellido, p.segundoApellido, p.nombres].filte
 const userNm = (u) => u ? [u.primerApellido, u.nombres].filter(Boolean).join(" ") : "—";
 const str    = (v) => (v === null || v === undefined || v === "") ? "—" : String(v);
 
-// ──────────────────────────────────────────────────────────────────────────────
 export const generateHealthRecordPDF = (record) =>
   new Promise((resolve, reject) => {
     const doc = new PDFDocument({
@@ -46,7 +45,7 @@ export const generateHealthRecordPDF = (record) =>
     const BOTTOM = PH - 46;         // 795.89
     let pageNum  = 0;
 
-    // ── Encabezado ────────────────────────────────────────────────────────────
+    // Encabezado
     const drawPageHeader = () => {
       pageNum++;
 
@@ -76,7 +75,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.x = M;
     };
 
-    // ── Pie de página ─────────────────────────────────────────────────────────
+    // Pie de página
     const drawPageFooter = () => {
       const y = PH - 26;
       doc.rect(0, y, PW, 26).fill(C.gray50);
@@ -93,7 +92,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.page.margins.bottom = savedBottom;
     };
 
-    // ── Título de sección ─────────────────────────────────────────────────────
+    // Título de sección
     const sectionTitle = (label, count) => {
       if (doc.y > BOTTOM - 78) { doc.addPage(); drawPageHeader(); }
       const y = doc.y;
@@ -109,7 +108,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.y = y + 20;
     };
 
-    // ── Grid de datos tipo formulario ─────────────────────────────────────────
+    // Grid de datos tipo formulario
     const drawDataGrid = (fields, numCols = 4) => {
       const CELL_H = 22;
       const cellW  = CW / numCols;
@@ -156,7 +155,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.y = rowY + 5;
     };
 
-    // ── Tabla genérica con filas de altura variable ───────────────────────────
+    // Tabla genérica con filas de altura variable
     const drawTable = (headers, rows, colWidths) => {
       const totalW  = colWidths.reduce((a, b) => a + b, 0);
       const HDR_H   = 16;
@@ -214,7 +213,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.y += 5;
     };
 
-    // ── Gráfico de líneas con color por dataset ──────────────────────────────
+    // Gráfico de líneas con color por dataset
     // datasets: [{ label, data: (number|null)[], color?: string }]
     // labels: string[] en orden cronológico (izq = más antiguo, der = más reciente)
     const drawLineChart = (title, datasets, labels, cx, cy, cw, ch) => {
@@ -320,7 +319,7 @@ export const generateHealthRecordPDF = (record) =>
       });
     };
 
-    // ── Bloque destacado para datos importantes (alergias, condiciones, contacto)
+    // Bloque destacado para datos importantes (alergias, condiciones, contacto)
     const drawSpecialBlock = (label, value) => {
       if (!value) return;
       const PAD   = 10;
@@ -341,7 +340,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.y = y + totalH + 4;
     };
 
-    // ── Tabla especializada de signos vitales con encabezados enriquecidos ────
+    // Tabla de signos vitales
     const drawVitalSignsTable = (sorted) => {
       const colWidths = [60, 100, 75, 75, 70, 125]; // Σ = 505
       const totalW    = colWidths.reduce((a, b) => a + b, 0);
@@ -434,7 +433,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.y += 5;
     };
 
-    // ── Sub-nota debajo de tabla (para notes de signos vitales / vacunas) ─────
+    // Sub-nota debajo de tabla
     const drawSubNote = (prefix, text) => {
       if (!text) return;
       if (doc.y > BOTTOM - 22) { doc.addPage(); drawPageHeader(); }
@@ -452,7 +451,7 @@ export const generateHealthRecordPDF = (record) =>
 
     const pat = record.patient || {};
 
-    // ── Bloque de identidad ───────────────────────────────────────────────────
+    // Bloque de identidad
     const titleY = doc.y;
     doc.rect(M, titleY, CW, 48).fill(C.white);
     doc.rect(M, titleY, CW, 48).stroke(C.gray300);
@@ -471,7 +470,7 @@ export const generateHealthRecordPDF = (record) =>
 
     doc.y = titleY + 55;
 
-    // ── Datos del paciente ────────────────────────────────────────────────────
+    // Datos del paciente
     sectionTitle("Datos del paciente");
 
     const age = pat.dateOfBirth
@@ -508,7 +507,7 @@ export const generateHealthRecordPDF = (record) =>
       drawSpecialBlock("Contacto de emergencia", ecTxt);
     }
 
-    // ── Signos vitales ────────────────────────────────────────────────────────
+    // Signos vitales
     if (record.vitalSigns?.length) {
       const sorted = [...record.vitalSigns].sort((a, b) => new Date(b.date) - new Date(a.date));
       sectionTitle("Signos vitales", sorted.length);
@@ -519,7 +518,7 @@ export const generateHealthRecordPDF = (record) =>
         if (vs.notes) drawSubNote(`Obs. ${idx + 1} (${fmt(vs.date)}): `, vs.notes);
       });
 
-      // ── Gráficos de evolución (solo si hay ≥ 2 tomas) ─────────────────────
+      // Gráficos de evolución (solo si hay 2+ tomas)
       if (sorted.length >= 2) {
         // Para el gráfico el orden debe ser cronológico (izq = más antiguo)
         const chrono = [...sorted].reverse();
@@ -561,7 +560,7 @@ export const generateHealthRecordPDF = (record) =>
       }
     }
 
-    // ── Diagnósticos ──────────────────────────────────────────────────────────
+    // Diagnósticos
     if (record.diagnoses?.length) {
       sectionTitle("Diagnósticos", record.diagnoses.length);
 
@@ -575,7 +574,7 @@ export const generateHealthRecordPDF = (record) =>
       drawTable(dHeaders, dRows, dColW);
     }
 
-    // ── Historial de alergias ─────────────────────────────────────────────────
+    // Historial de alergias
     if (record.allergyHistory?.length) {
       sectionTitle("Historial de alergias", record.allergyHistory.length);
 
@@ -588,7 +587,7 @@ export const generateHealthRecordPDF = (record) =>
       drawTable(aHeaders, aRows, aColW);
     }
 
-    // ── Tratamientos previos ──────────────────────────────────────────────────
+    // Tratamientos previos
     if (record.previousTreatments?.length) {
       sectionTitle("Tratamientos previos", record.previousTreatments.length);
 
@@ -601,7 +600,7 @@ export const generateHealthRecordPDF = (record) =>
       drawTable(tHeaders, tRows, tColW);
     }
 
-    // ── Registro de vacunación ────────────────────────────────────────────────
+    // Registro de vacunación
     if (record.vaccines?.length) {
       sectionTitle("Registro de vacunación", record.vaccines.length);
 
@@ -618,7 +617,7 @@ export const generateHealthRecordPDF = (record) =>
       });
     }
 
-    // ── Evolución y observaciones clínicas ────────────────────────────────────
+    // Evolución y observaciones clínicas
     if (record.observations?.length) {
       sectionTitle("Evolución y observaciones clínicas", record.observations.length);
 
@@ -642,7 +641,7 @@ export const generateHealthRecordPDF = (record) =>
       doc.y += 2;
     }
 
-    // ── Citas médicas vinculadas ──────────────────────────────────────────────
+    // Citas médicas vinculadas
     if (record.medicalAppointments?.length) {
       const sortedApts = [...record.medicalAppointments]
         .sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -660,7 +659,7 @@ export const generateHealthRecordPDF = (record) =>
       drawTable(aptHeaders, aptRows, aptColW);
     }
 
-    // ── Bloque de firmas ──────────────────────────────────────────────────────
+    // Bloque de firmas
     if (doc.y > BOTTOM - 100) { doc.addPage(); drawPageHeader(); }
     doc.y += 14;
 

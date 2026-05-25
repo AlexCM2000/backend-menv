@@ -17,7 +17,7 @@ import colors from "colors";
 dotenv.config();
 await db();
 
-// ─────────────────── HELPERS ───────────────────
+// Helpers
 const pick  = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const pickN = (arr, n) => [...arr].sort(() => 0.5 - Math.random()).slice(0, n);
 const ri    = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
@@ -44,7 +44,7 @@ let _emailSeq = 0;
 const nextSus = ()       => String(++_susSeq);
 const mkEmail = (prefix) => { _emailSeq++; return `${prefix.toLowerCase()}${_emailSeq}@sigmed.bo`; };
 
-// ─────────────────── DATOS ESTÁTICOS ───────────────────
+// Datos estáticos
 const APELLIDOS = [
   "Mamani","Condori","Quispe","Flores","Cruz","Gutierrez","Vargas","Lopez",
   "Garcia","Ramos","Apaza","Choque","Lima","Poma","Tito","Cori","Espinoza",
@@ -87,7 +87,7 @@ const RELATIONSHIPS = ["Padre","Madre","Cónyuge","Hermano/a","Hijo/a","Tío/a"]
 const CONDITIONS    = ["Hipertensión arterial","Diabetes tipo 2","Asma bronquial","Sin antecedentes"];
 const ALLERGIES_OPT = ["Penicilina","Sulfas","Polen","AINE","Sin alergias conocidas"];
 
-// ── Diagnósticos CIE-10 con notas clínicas realistas
+// Diagnósticos CIE-10
 const DIAGNOSES = [
   {
     code: "J00",
@@ -166,7 +166,7 @@ const DIAGNOSES = [
   },
 ];
 
-// ── Observaciones clínicas estilo médico
+// Observaciones clínicas
 const OBSERVATIONS = [
   "Se realiza examen físico completo. Paciente consciente, orientado en tiempo y espacio, bien hidratado. No se evidencian signos de alarma. Se indica tratamiento y retorno en 7 días.",
   "Paciente refiere mejoría parcial respecto a consulta anterior. Persiste leve sintomatología residual. Se continúa tratamiento y se agrega terapia complementaria.",
@@ -185,7 +185,7 @@ const OBSERVATIONS = [
   "Paciente refiere buena adherencia terapéutica. Se realiza ajuste de dosis según respuesta clínica y laboratorial. Próximo control en 3 meses.",
 ];
 
-// ── Catálogo de medicamentos para Stock (por centro)
+// Catálogo de medicamentos para Stock
 const STOCK_CATALOG = [
   { name: "Amoxicilina 500mg",      category: "antibiótico",      pharmaceuticalForm: "cápsula",    unit: "comprimidos", minimumQuantity: 20 },
   { name: "Paracetamol 500mg",      category: "analgésico",       pharmaceuticalForm: "comprimido", unit: "comprimidos", minimumQuantity: 30 },
@@ -207,7 +207,7 @@ const STOCK_CATALOG = [
   { name: "Paracetamol 120mg/5ml",  category: "analgésico",       pharmaceuticalForm: "jarabe",     unit: "frascos",     minimumQuantity: 5  },
 ];
 
-// ── Datos para ítems de receta
+// Datos para ítems de receta
 const RX_DOSES = [
   "1 comprimido", "2 comprimidos", "1/2 comprimido",
   "5 ml", "10 ml", "1 ampolla", "1 frasco",
@@ -236,7 +236,7 @@ const nextRxCode = (date) => {
   return `RX-${dp}-${String(_rxSeq).padStart(5, "0")}`;
 };
 
-// ── Tratamientos previos
+// Tratamientos previos
 const PREV_TREATMENTS = [
   "Tratamiento antibiótico con Amoxicilina 500mg por 7 días (completado satisfactoriamente)",
   "Terapia antihipertensiva con Enalapril 5mg/día (en curso, buena respuesta)",
@@ -250,7 +250,7 @@ const PREV_TREATMENTS = [
   "Hidratación oral supervisada por deshidratación moderada (2 días, recuperado)",
 ];
 
-// ── Reacciones alérgicas
+// Reacciones alérgicas
 const ALLERGY_REACTIONS = [
   "Urticaria generalizada y prurito intenso",
   "Erupción cutánea maculopapular en tronco",
@@ -260,7 +260,7 @@ const ALLERGY_REACTIONS = [
   "Náuseas y malestar gastrointestinal",
 ];
 
-// ─────────────────── SEED A — Entidades base ───────────────────
+// Seed A: entidades base
 const seedA = async () => {
   console.log(colors.cyan("\n[SEED-A] Limpiando colecciones previas..."));
   await Promise.all([
@@ -287,7 +287,7 @@ const seedA = async () => {
 
   console.log(colors.green("  ✓ Colecciones e índices huérfanos limpios"));
 
-  // ── 1. Centros de salud
+  // 1. Centros de salud
   const centerDocs = await Health.insertMany([
     { name: "Puerto Acosta", codigo: 200267, departamento: "La Paz", municipio: "Puerto Acosta", nivel: 1, direccion: "Av. Principal S/N, Puerto Acosta"  },
     { name: "Cotapata",      codigo: 200860, departamento: "La Paz", municipio: "Puerto Acosta", nivel: 1, direccion: "Calle Central S/N, Cotapata"        },
@@ -298,7 +298,7 @@ const seedA = async () => {
   ]);
   console.log(colors.green(`  ✓ ${centerDocs.length} centros de salud`));
 
-  // ── 2. Categorías (íconos reales del proyecto)
+  // 2. Categorías
   await Category.insertMany([
     { name: "TELESALUD",           description: "Servicios de telemedicina y teleconsulta",         icon: "assistance.png"   },
     { name: "BONO JUANA AZURDUY",  description: "Programa de salud materno infantil Juana Azurduy", icon: "mother.png"       },
@@ -308,7 +308,7 @@ const seedA = async () => {
   ]);
   console.log(colors.green("  ✓ 5 categorías"));
 
-  // ── 3. Servicios
+  // 3. Servicios
   const svcDocs = await Services.insertMany([
     { name: "Nueva teleconsulta",           category: "TELESALUD"          },
     { name: "Teleconsulta y seguimiento",   category: "TELESALUD"          },
@@ -329,7 +329,7 @@ const seedA = async () => {
   ]);
   console.log(colors.green(`  ✓ ${svcDocs.length} servicios`));
 
-  // ── 4. Admin global
+  // 4. Admin global
   const adminSus = nextSus();
   await Sus.create({ name: "Administrador SIGMED", codigo: adminSus });
   await User.create({
@@ -345,7 +345,7 @@ const seedA = async () => {
   });
   console.log(colors.green("  ✓ Admin: admin@sigmed.bo / Admin123456"));
 
-  // ── 5. Por centro: encargado + médicos + usuarios + pacientes
+  // 5. Por centro: encargado, médicos, usuarios, pacientes
   const doctorsByCenter  = {};
   const patientsByCenter = {};
 
@@ -510,7 +510,7 @@ const seedA = async () => {
   return { centerDocs, svcDocs, doctorsByCenter, patientsByCenter };
 };
 
-// ─────────────────── SEED B — Citas + Historiales ───────────────────
+// Seed B: citas + historiales clínicos
 const seedB = async (centerDocs, svcDocs, doctorsByCenter, patientsByCenter) => {
   const now  = new Date();
   const from = new Date(now); from.setMonth(from.getMonth() - 4);
@@ -524,7 +524,7 @@ const seedB = async (centerDocs, svcDocs, doctorsByCenter, patientsByCenter) => 
 
     const bmUser = await User.findOne({ health: center._id, branchManager: true });
 
-    // ── Citas médicas: 100 por centro, solo días hábiles, sin slot repetido
+    // Citas médicas: 100 por centro
     const usedSlots = new Set();
     const toInsert  = [];
     let   attempts  = 0;
@@ -561,7 +561,7 @@ const seedB = async (centerDocs, svcDocs, doctorsByCenter, patientsByCenter) => 
     }
     console.log(colors.green(`    ✓ ${insertedApts.length} citas (solo lun-vie, estado por fecha)`));
 
-    // ── Historiales clínicos: 1 por paciente con datos ricos
+    // Historiales clínicos
     let hrCount = 0;
     for (const patient of patients) {
       const now2 = new Date();
@@ -635,7 +635,7 @@ const seedB = async (centerDocs, svcDocs, doctorsByCenter, patientsByCenter) => 
   }
 };
 
-// ─────────────────── SEED C — Stock + Recetas médicas ───────────────────
+// Seed C: stock + recetas médicas
 const seedC = async (centerDocs, patientsByCenter) => {
   const now  = new Date();
   const from = new Date(now); from.setMonth(from.getMonth() - 3);
@@ -646,7 +646,7 @@ const seedC = async (centerDocs, patientsByCenter) => {
     const pharmUser   = await User.findOne({ health: center._id, pharmacist:    true });
     const doctorUsers = await User.find({ health: center._id, doctor: true }).lean();
 
-    // ── Stock: 18 medicamentos por centro
+    // Stock: 18 medicamentos por centro
     const stockDocs = await Stock.insertMany(
       STOCK_CATALOG.map((med) => ({
         ...med,
@@ -657,7 +657,7 @@ const seedC = async (centerDocs, patientsByCenter) => {
       }))
     );
 
-    // ── Recetas: 25 por centro
+    // Recetas: 25 por centro
     let rxCount = 0;
     for (let i = 0; i < 25; i++) {
       const patient  = pick(patients);
@@ -713,7 +713,7 @@ const seedC = async (centerDocs, patientsByCenter) => {
   }
 };
 
-// ─────────────────── LIMPIEZA COMPLETA ───────────────────
+// Limpieza completa
 const clearAll = async () => {
   console.log(colors.red("\n[CLEAR] Eliminando todos los datos..."));
   await Promise.all([
@@ -734,7 +734,7 @@ const clearAll = async () => {
   process.exit();
 };
 
-// ─────────────────── ENTRADA ───────────────────
+// Entrada
 const arg = process.argv[2];
 
 if (arg === "--import") {

@@ -1,5 +1,6 @@
 import Stock from "../models/Stock.js";
 import mongoose from "mongoose";
+import { escapeRegex } from "../utils/index.js";
 
 const canManageStock = (user) =>
   user.admin || user.branchManager || user.pharmacist;
@@ -11,14 +12,13 @@ const getHealthFilter = (user, queryHealth) => {
   return { health: new mongoose.Types.ObjectId(String(user.health)) };
 };
 
-/* ─── GET /api/stock ─────────────────────────────────────────── */
 export const getStock = async (req, res) => {
   try {
     const { search, health, active, page = 1, page_size = 20 } = req.query;
     const filter = getHealthFilter(req.user, health);
 
     if (active !== undefined) filter.active = active === "true";
-    if (search) filter.name = { $regex: search, $options: "i" };
+    if (search) filter.name = { $regex: escapeRegex(search), $options: "i" };
 
     const skip = (Number(page) - 1) * Number(page_size);
     const [results, count] = await Promise.all([
@@ -38,7 +38,6 @@ export const getStock = async (req, res) => {
   }
 };
 
-/* ─── GET /api/stock/available?health= ─────────────────────── */
 export const getAvailableStock = async (req, res) => {
   try {
     const healthId = req.query.health ?? req.user.health;
@@ -60,7 +59,6 @@ export const getAvailableStock = async (req, res) => {
   }
 };
 
-/* ─── POST /api/stock ────────────────────────────────────────── */
 export const createStock = async (req, res) => {
   try {
     if (!canManageStock(req.user))
@@ -89,7 +87,6 @@ export const createStock = async (req, res) => {
   }
 };
 
-/* ─── PUT /api/stock/:id ─────────────────────────────────────── */
 export const updateStock = async (req, res) => {
   try {
     if (!canManageStock(req.user))
@@ -114,7 +111,6 @@ export const updateStock = async (req, res) => {
   }
 };
 
-/* ─── DELETE /api/stock/:id (soft — toggle active) ──────────── */
 export const toggleStockActive = async (req, res) => {
   try {
     if (!canManageStock(req.user))

@@ -10,6 +10,7 @@ import Doctor from "../../models/Doctor.js";
 import Services from "../../models/Services.js";
 import Category from "../../models/Category.js";
 import { buildExcel, buildPDF } from "../../utils/reportService.js";
+import { escapeRegex } from "../../utils/index.js";
 
 const isMongoObjectId = (v) =>
   typeof v === "string" && /^[a-fA-F0-9]{24}$/.test(v);
@@ -24,7 +25,7 @@ const calcAge = (dob) => {
 const formatBs = (amount) =>
   amount != null ? `Bs. ${Number(amount).toFixed(2)}` : "—";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// Helpers
 
 /** Decide format from query param, defaults to xlsx */
 const getFormat = (req) =>
@@ -98,7 +99,7 @@ export const exportAppointments = async (req, res) => {
     const format = getFormat(req);
     const { search, state, date_from, date_to } = req.query;
 
-    // ── Construir query (igual que userController) ──────────────────────────
+    // Construir query (igual que userController)
     let query = {};
     let healthName = null;
 
@@ -138,7 +139,7 @@ export const exportAppointments = async (req, res) => {
       }
     }
 
-    // ── Fetch ALL records ───────────────────────────────────────────────────
+    // Fetch all records
     const appointments = await Appointment.find(query)
       .populate("services", "name category")
       .populate("health", "name")
@@ -148,7 +149,7 @@ export const exportAppointments = async (req, res) => {
       .sort({ date: -1 })
       .lean();
 
-    // ── Columnas según formato ───────────────────────────────────────────────
+    // Columnas según formato
     const isStaff = req.user.admin || req.user.branchManager;
     const pdfColumns = [
       { label: "N°",            key: "num",      width: 4  },
@@ -197,7 +198,7 @@ export const exportAppointments = async (req, res) => {
       estado:       a.state ?? "—",
     }));
 
-    // ── Resumen ─────────────────────────────────────────────────────────────
+    // Resumen
     const summary = [
       "Pendiente", "Completada", "Reprogramada", "Cancelada", "No asistio",
     ].flatMap((s) => {
@@ -205,7 +206,7 @@ export const exportAppointments = async (req, res) => {
       return count > 0 ? [{ label: s, value: count }] : [];
     });
 
-    // ── Filtros aplicados ───────────────────────────────────────────────────
+    // Filtros aplicados
     const filters = buildFilterDesc([
       search       && `Búsqueda: "${search}"`,
       state        && `Estado: ${state}`,
@@ -214,7 +215,7 @@ export const exportAppointments = async (req, res) => {
       healthName   && `Centro: ${healthName}`,
     ]);
 
-    // ── Generar y enviar ────────────────────────────────────────────────────
+    // Generar y enviar
     const buffer = format === "pdf"
       ? await buildPDF({ title: "Reporte de Citas Médicas", filters, columns, rows, summary })
       : await buildExcel({ title: "Reporte de Citas Médicas", filters, columns, rows, summary });
@@ -272,11 +273,11 @@ export const exportPatients = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { primerApellido: { $regex: search, $options: "i" } },
-        { segundoApellido: { $regex: search, $options: "i" } },
-        { nombres:   { $regex: search, $options: "i" } },
-        { email:     { $regex: search, $options: "i" } },
-        { susCode:   { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { segundoApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { nombres:   { $regex: escapeRegex(search), $options: "i" } },
+        { email:     { $regex: escapeRegex(search), $options: "i" } },
+        { susCode:   { $regex: escapeRegex(search), $options: "i" } },
       ];
     }
 
@@ -401,10 +402,10 @@ export const exportHealthRecords = async (req, res) => {
 
     if (search) {
       patientFilter.$or = [
-        { primerApellido: { $regex: search, $options: "i" } },
-        { segundoApellido: { $regex: search, $options: "i" } },
-        { nombres:   { $regex: search, $options: "i" } },
-        { susCode:   { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { segundoApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { nombres:   { $regex: escapeRegex(search), $options: "i" } },
+        { susCode:   { $regex: escapeRegex(search), $options: "i" } },
       ];
       needsLookup = true;
     }
@@ -552,9 +553,9 @@ export const exportDoctors = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { name:          { $regex: search, $options: "i" } },
-        { specialty:     { $regex: search, $options: "i" } },
-        { licenseNumber: { $regex: search, $options: "i" } },
+        { name:          { $regex: escapeRegex(search), $options: "i" } },
+        { specialty:     { $regex: escapeRegex(search), $options: "i" } },
+        { licenseNumber: { $regex: escapeRegex(search), $options: "i" } },
       ];
     }
 
@@ -639,7 +640,7 @@ export const exportServices = async (req, res) => {
     const { search, category } = req.query;
 
     const query = {};
-    if (search)   query.name     = { $regex: search, $options: "i" };
+    if (search)   query.name     = { $regex: escapeRegex(search), $options: "i" };
     if (category) query.category = category;
 
     const services = await Services.find(query).sort({ category: 1, name: 1 }).lean();
@@ -695,7 +696,7 @@ export const exportCategories = async (req, res) => {
     const { search, active } = req.query;
 
     const query = {};
-    if (search) query.name = { $regex: search, $options: "i" };
+    if (search) query.name = { $regex: escapeRegex(search), $options: "i" };
     if (active === "true")  query.active = true;
     else if (active === "false") query.active = false;
 
@@ -779,11 +780,11 @@ export const exportUsers = async (req, res) => {
 
     if (search) {
       query.$or = [
-        { primerApellido: { $regex: search, $options: "i" } },
-        { segundoApellido: { $regex: search, $options: "i" } },
-        { nombres:  { $regex: search, $options: "i" } },
-        { email:   { $regex: search, $options: "i" } },
-        { susCode: { $regex: search, $options: "i" } },
+        { primerApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { segundoApellido: { $regex: escapeRegex(search), $options: "i" } },
+        { nombres:  { $regex: escapeRegex(search), $options: "i" } },
+        { email:   { $regex: escapeRegex(search), $options: "i" } },
+        { susCode: { $regex: escapeRegex(search), $options: "i" } },
       ];
     }
 
