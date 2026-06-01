@@ -20,6 +20,7 @@ const stockSchema = mongoose.Schema(
     },
     availableQuantity: { type: Number, default: 0, min: 0 },
     minimumQuantity: { type: Number, required: true, min: 0 },
+    expirationDate: { type: Date, default: null },
     health: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Health",

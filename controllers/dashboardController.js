@@ -4,6 +4,7 @@ import Doctor from "../models/Doctor.js";
 import User from "../models/User.js";
 import Stock from "../models/Stock.js";
 import mongoose from "mongoose";
+import { addDays, endOfDay } from "date-fns";
 
 const getDashboardStats = async (req, res) => {
   try {
@@ -189,18 +190,43 @@ const getDashboardStats = async (req, res) => {
       },
     ]);
 
-    // Alertas de stock bajo mínimo (solo farmacéutico y branchManager)
+    // Alertas de stock (farmacéutico, branchManager, admin)
     let stockAlerts = [];
-    const needsStockAlerts = req.user.pharmacist || req.user.branchManager;
-    if (needsStockAlerts && req.user.health) {
-      stockAlerts = await Stock.find({
-        health: new mongoose.Types.ObjectId(String(req.user.health)),
-        active: true,
-        $expr: { $lte: ["$availableQuantity", "$minimumQuantity"] },
-      })
-        .select("name availableQuantity minimumQuantity unit category")
-        .sort({ availableQuantity: 1 })
-        .lean();
+    let expirationAlerts = [];
+    const needsStockAlerts = req.user.pharmacist || req.user.branchManager || req.user.admin;
+
+    if (needsStockAlerts) {
+      // Para admin sin filtro de health → todos los centros; con filtro → solo ese centro
+      const stockHealthFilter = {};
+      if (req.user.admin && req.query.health) {
+        stockHealthFilter.health = new mongoose.Types.ObjectId(req.query.health);
+      } else if (!req.user.admin && req.user.health) {
+        stockHealthFilter.health = new mongoose.Types.ObjectId(String(req.user.health));
+      }
+
+      const expirationCutoff = endOfDay(addDays(new Date(), 5));
+
+      [stockAlerts, expirationAlerts] = await Promise.all([
+        Stock.find({
+          ...stockHealthFilter,
+          active: true,
+          $expr: { $lte: ["$availableQuantity", "$minimumQuantity"] },
+        })
+          .populate("health", "name")
+          .select("name availableQuantity minimumQuantity unit category health")
+          .sort({ availableQuantity: 1 })
+          .lean(),
+
+        Stock.find({
+          ...stockHealthFilter,
+          active: true,
+          expirationDate: { $ne: null, $lte: expirationCutoff },
+        })
+          .populate("health", "name")
+          .select("name category unit expirationDate health")
+          .sort({ expirationDate: 1 })
+          .lean(),
+      ]);
     }
 
     res.json({
@@ -219,6 +245,7 @@ const getDashboardStats = async (req, res) => {
       citasPorEspecialidad,
       topMedicos,
       stockAlerts,
+      expirationAlerts,
       range,
     });
   } catch (error) {

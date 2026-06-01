@@ -1,6 +1,7 @@
 import Stock from "../models/Stock.js";
 import mongoose from "mongoose";
 import { escapeRegex } from "../utils/index.js";
+import { addDays, endOfDay } from "date-fns";
 
 const canManageStock = (user) =>
   user.admin || user.branchManager || user.pharmacist;
@@ -64,7 +65,7 @@ export const createStock = async (req, res) => {
     if (!canManageStock(req.user))
       return res.status(403).json({ msg: "Sin permisos para gestionar stock" });
 
-    const { name, category, pharmaceuticalForm, unit, availableQuantity, minimumQuantity } = req.body;
+    const { name, category, pharmaceuticalForm, unit, availableQuantity, minimumQuantity, expirationDate } = req.body;
     if (!name || !category || !pharmaceuticalForm || !unit || minimumQuantity === undefined)
       return res.status(400).json({ msg: "Todos los campos son requeridos" });
 
@@ -77,6 +78,7 @@ export const createStock = async (req, res) => {
       unit,
       availableQuantity: availableQuantity ?? 0,
       minimumQuantity,
+      expirationDate: expirationDate ?? null,
       health: healthId,
     });
 
@@ -98,7 +100,7 @@ export const updateStock = async (req, res) => {
     if (!req.user.admin && String(stock.health) !== String(req.user.health))
       return res.status(403).json({ msg: "No pertenece a su centro de salud" });
 
-    const allowed = ["name", "category", "pharmaceuticalForm", "unit", "availableQuantity", "minimumQuantity", "active"];
+    const allowed = ["name", "category", "pharmaceuticalForm", "unit", "availableQuantity", "minimumQuantity", "expirationDate", "active"];
     allowed.forEach((field) => {
       if (req.body[field] !== undefined) stock[field] = req.body[field];
     });
@@ -128,5 +130,28 @@ export const toggleStockActive = async (req, res) => {
   } catch (error) {
     console.log(error);
     res.status(500).json({ msg: "Error al cambiar estado del medicamento" });
+  }
+};
+
+// Medicamentos activos con fecha de vencimiento dentro de los próximos N días (o ya vencidos)
+export const getExpiringStock = async (req, res) => {
+  try {
+    const days = parseInt(req.query.days ?? "5", 10);
+    const { health } = req.query;
+
+    const filter = getHealthFilter(req.user, health);
+    filter.active = true;
+    filter.expirationDate = { $ne: null, $lte: endOfDay(addDays(new Date(), days)) };
+
+    const results = await Stock.find(filter)
+      .populate("health", "name")
+      .select("name category pharmaceuticalForm unit availableQuantity expirationDate health")
+      .sort({ expirationDate: 1 })
+      .lean();
+
+    res.json(results);
+  } catch (error) {
+    console.log(error);
+    res.status(500).json({ msg: "Error al obtener vencimientos" });
   }
 };

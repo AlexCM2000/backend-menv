@@ -193,8 +193,25 @@ const getAvailability = async (req, res) => {
             }
         }
 
-        // Citas del día filtradas por los médicos efectivos (los que trabajan hoy)
+        // Si se pasó un doctorId concreto pero la categoría no encontró médicos (mismatch de nombre),
+        // calcular shiftInfo directamente desde el horario del doctor especificado.
+        if (!shiftInfo && doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
+            const schedule = await DoctorSchedule.findOne({ doctor: doctorId, dayOfWeek: dayName, active: true });
+            shiftInfo = schedule
+                ? { morning: schedule.morning, afternoon: schedule.afternoon }
+                : { morning: false, afternoon: false };
+        }
+
+        // Citas del día: incluir siempre las del doctorId específico aunque no esté en allCategoryDoctors
         const isoDate = formatISO(newDate);
+        const effectiveDoctorIds = doctors.map(d => d._id);
+        if (doctorId && mongoose.Types.ObjectId.isValid(doctorId)) {
+            const did = new mongoose.Types.ObjectId(doctorId);
+            if (!effectiveDoctorIds.some(id => id.toString() === doctorId)) {
+                effectiveDoctorIds.push(did);
+            }
+        }
+
         const appointmentQuery = {
             health: healthId,
             date: { $gte: startOfDay(new Date(isoDate)), $lte: endOfDay(new Date(isoDate)) },
@@ -202,10 +219,10 @@ const getAvailability = async (req, res) => {
         if (excludeId && mongoose.Types.ObjectId.isValid(excludeId)) {
             appointmentQuery._id = { $ne: excludeId };
         }
-        if (doctors.length > 0) {
-            appointmentQuery.doctor = { $in: doctors.map(d => d._id) };
+        if (effectiveDoctorIds.length > 0) {
+            appointmentQuery.doctor = { $in: effectiveDoctorIds };
         }
-        const appointments = doctors.length > 0
+        const appointments = effectiveDoctorIds.length > 0
             ? await Appointment.find(appointmentQuery).select("time doctor")
             : [];
 
