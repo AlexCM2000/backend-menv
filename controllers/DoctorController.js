@@ -92,9 +92,11 @@ const getDoctorsForSelect = async (req, res) => {
     if (req.query.specialty)
       filter.specialty = { $regex: new RegExp(escapeRegex(req.query.specialty), "i") };
 
+    console.log("[getDoctorsForSelect] filter:", JSON.stringify(filter));
     const doctors = await Doctor.find(filter)
       .select("name specialty licenseNumber")
       .sort({ name: 1 });
+    console.log(`[getDoctorsForSelect] resultado: ${doctors.length} médico(s)`);
 
     return res.json(doctors);
   } catch (error) {
