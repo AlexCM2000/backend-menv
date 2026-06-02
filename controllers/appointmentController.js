@@ -5,7 +5,7 @@ import Patient from "../models/Patient.js";
 import HealthRecord from "../models/HealthRecord.js";
 import DoctorSchedule from "../models/DoctorSchedule.js";
 import { parse, formatISO, startOfDay, endOfDay, isValid } from "date-fns";
-import { formatDate, handleNotFoundError, validateObjectId } from "../utils/index.js";
+import { formatDate, handleNotFoundError, validateObjectId, escapeRegex } from "../utils/index.js";
 import { sendEmailDeleteAppointment, sendEmailNewAppointment, sendEmailUpdateAppointment } from "../emails/appointmentEmailService.js";
 import mongoose from "mongoose";
 
@@ -155,9 +155,13 @@ const getAvailability = async (req, res) => {
         const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
         const dayName = DAY_NAMES[newDate.getDay()];
 
-        // Todos los médicos activos de la categoría en el centro
+        // Todos los médicos activos de la categoría en el centro (búsqueda case-insensitive)
         const allCategoryDoctors = category
-            ? await Doctor.find({ health: healthId, specialty: category, active: true }).select("_id name specialty")
+            ? await Doctor.find({
+                health: healthId,
+                specialty: { $regex: new RegExp(`^${escapeRegex(category)}$`, "i") },
+                active: true,
+              }).select("_id name specialty")
             : [];
 
         let doctors = [];
