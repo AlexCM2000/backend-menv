@@ -159,7 +159,7 @@ const getAvailability = async (req, res) => {
         const allCategoryDoctors = category
             ? await Doctor.find({
                 health: healthId,
-                specialty: { $regex: new RegExp(`^${escapeRegex(category)}$`, "i") },
+                specialty: { $regex: new RegExp(escapeRegex(category), "i") },
                 active: true,
               }).select("_id name specialty")
             : [];

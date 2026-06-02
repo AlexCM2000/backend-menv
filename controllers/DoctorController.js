@@ -90,7 +90,7 @@ const getDoctorsForSelect = async (req, res) => {
     }
 
     if (req.query.specialty)
-      filter.specialty = { $regex: new RegExp(`^${escapeRegex(req.query.specialty)}$`, "i") };
+      filter.specialty = { $regex: new RegExp(escapeRegex(req.query.specialty), "i") };
 
     const doctors = await Doctor.find(filter)
       .select("name specialty licenseNumber")
